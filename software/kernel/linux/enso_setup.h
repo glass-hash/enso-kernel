@@ -43,7 +43,6 @@
 #include <linux/module.h>
 #include <linux/printk.h>
 #include <linux/slab.h>
-#include <linux/spinlock.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
 
@@ -103,23 +102,10 @@ struct enso_send_tx_pipe_params {
   uint32_t pipe_id;
 } __attribute__((packed));
 
-struct tx_queue_node {
-  struct enso_send_tx_pipe_params batch;
-  unsigned long ftime;
-};
-
-struct flow_metadata {
-  unsigned long last_ftime;
-};
-
-struct min_heap {
-  struct heap_node *harr;
-  uint32_t capacity;
-  uint32_t size;
-};
-
-struct heap_node {
-  struct tx_queue_node *queue_node;
+struct enso_flow {
+  uint64_t total_bytes;
+  uint64_t bytes_limit;
+  uint64_t time_slice;
 };
 
 /**
@@ -144,18 +130,13 @@ struct dev_bookkeep {
   atomic_t chr_open_cnt;
   struct semaphore sem;
   uint32_t nb_fb_queues;
+  uint32_t nb_tx_pipes;
   bool enable_rr;
   uint8_t *notif_q_status;
   uint8_t *rx_pipe_status;
   uint8_t *tx_pipe_status;
 
-  struct task_struct *enso_sched_thread;
-  unsigned long stime;
-  struct flow_metadata **tx_flows;
-  struct min_heap *heap;
-  spinlock_t lock;
-  bool sched_run;
-  struct notification_buf_pair **notif_buf_pairs;
+  struct enso_flow *flows;
 };
 
 /**

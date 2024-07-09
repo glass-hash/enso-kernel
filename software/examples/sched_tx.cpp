@@ -143,7 +143,10 @@ void run_tx(std::vector<enso::tx_stats_t>& stats, uint32_t core_id,
   while (keep_running) {
     for (int i = start_pipe_ind; i < end_pipe_ind; i++) {
       // send the packets
-      pipes[i].tx_pipe->Send(pipes[i].nb_aligned_bytes);
+      int res = pipes[i].tx_pipe->Send(pipes[i].nb_aligned_bytes);
+      if (res == -1) {
+        continue;
+      }
       // update the stats
       stats[pipes[i].tx_pipe->id()].nb_bytes += pipes[i].nb_raw_bytes;
       stats[pipes[i].tx_pipe->id()].nb_pkts += pipes[i].nb_pkts;

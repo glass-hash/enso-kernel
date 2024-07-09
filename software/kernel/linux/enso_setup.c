@@ -96,42 +96,17 @@ static __init int enso_init(void) {
     goto failed_tx_pipe_status_alloc;
   }
 
-  dev_bk->tx_flows =
-      kzalloc(MAX_NB_FLOWS * sizeof(struct flow_metadata *), GFP_KERNEL);
-  if (dev_bk->tx_flows == NULL) {
-    printk("couldn't create tx_flows for device\n");
-    goto failed_tx_flows_alloc;
+  dev_bk->flows = kzalloc(sizeof(struct enso_flow) * MAX_NB_FLOWS, GFP_KERNEL);
+  if (dev_bk->flows == NULL) {
+    printk("failed to create tx flows\n");
+    goto failed_flows_alloc;
   }
-
-  dev_bk->notif_buf_pairs =
-      kzalloc(MAX_NB_APPS * sizeof(struct notification_buf_pair *), GFP_KERNEL);
-  if (dev_bk->notif_buf_pairs == NULL) {
-    printk("couldn't create notif_buf_pairs\n");
-    goto failed_notif_buf_pair_alloc;
-  }
-
-  dev_bk->heap = kzalloc(sizeof(struct min_heap), GFP_KERNEL);
-  if (dev_bk->heap == NULL) {
-    printk("couldn't create the heap\n");
-    goto failed_heap_alloc;
-  }
-  init_heap(dev_bk->heap);
-
-  spin_lock_init(&dev_bk->lock);
-  dev_bk->enso_sched_thread = kthread_create(enso_sched, dev_bk, "enso_sched");
-  kthread_bind(dev_bk->enso_sched_thread, SCHED_CORE_NUM);
-  wake_up_process(dev_bk->enso_sched_thread);
-  dev_bk->sched_run = true;
 
   global_bk.dev_bk = dev_bk;
 
   return 0;
 
-failed_heap_alloc:
-  kfree(dev_bk->notif_buf_pairs);
-failed_notif_buf_pair_alloc:
-  kfree(dev_bk->tx_flows);
-failed_tx_flows_alloc:
+failed_flows_alloc:
   kfree(dev_bk->tx_pipe_status);
 failed_tx_pipe_status_alloc:
   kfree(dev_bk->rx_pipe_status);
@@ -149,35 +124,13 @@ module_init(enso_init);
  *
  * */
 static void enso_exit(void) {
-  // scheduler clean up
-  int index;
-  struct flow_metadata *tx_flow;
-
-  if (global_bk.dev_bk->sched_run) {
-    kthread_stop(global_bk.dev_bk->enso_sched_thread);
-  }
-
-  // tx_flows
-  for (index = 0; index < MAX_NB_FLOWS; index++) {
-    tx_flow = global_bk.dev_bk->tx_flows[index];
-    if (tx_flow) {
-      kfree(tx_flow);
-      tx_flow = NULL;
-    }
-  }
-  kfree(global_bk.dev_bk->tx_flows);
-
-  // free heap
-  free_heap(global_bk.dev_bk->heap);
-  kfree(global_bk.dev_bk->heap);
-
   // all other clean up
   enso_chr_exit();
   global_bk.intel_enso = NULL;
+  kfree(global_bk.dev_bk->flows);
   kfree(global_bk.dev_bk->tx_pipe_status);
   kfree(global_bk.dev_bk->rx_pipe_status);
   kfree(global_bk.dev_bk->notif_q_status);
-  kfree(global_bk.dev_bk->notif_buf_pairs);
   kfree(global_bk.dev_bk);
 }
 module_exit(enso_exit);

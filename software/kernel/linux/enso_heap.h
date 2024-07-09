@@ -36,6 +36,21 @@
 
 #define MAX_HEAP_SIZE 100000
 
+struct tx_queue_node {
+  struct enso_send_tx_pipe_params batch;
+  unsigned long ftime;
+};
+
+struct heap_node {
+  struct tx_queue_node *queue_node;
+};
+
+struct min_heap {
+  struct heap_node *harr;
+  uint32_t capacity;
+  uint32_t size;
+};
+
 void init_heap(struct min_heap *heap);
 void insert_heap(struct min_heap *heap, struct tx_queue_node *node);
 void show_heap(struct min_heap *heap);

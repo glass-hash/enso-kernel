@@ -844,14 +844,14 @@ class TxPipe {
    * @param nb_bytes The number of bytes to send. Must be a multiple of
    *                 `kQuantumSize`.
    */
-  inline void SendAndFree(uint32_t nb_bytes) {
+  inline int SendAndFree(uint32_t nb_bytes) {
     uint64_t phys_addr = buf_phys_addr_ + app_begin_;
     assert(nb_bytes <= kMaxCapacity);
     assert(nb_bytes / kQuantumSize * kQuantumSize == nb_bytes);
 
     app_begin_ = (app_begin_ + nb_bytes) & kBufMask;
 
-    device_->Send(kId, phys_addr, nb_bytes);
+    return device_->Send(kId, phys_addr, nb_bytes);
   }
 
   /**

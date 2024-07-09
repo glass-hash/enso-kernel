@@ -32,9 +32,10 @@
 
 #include "enso_ioctl.h"
 
+#include <linux/delay.h>
 #include <linux/kthread.h>
 
-#include "enso_heap.h"
+#define MAX_BYTES_LIMIT 9528320000
 
 /******************************************************************************
  * Static function prototypes
@@ -519,12 +520,9 @@ static long alloc_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   int i = 0;
   int32_t pipe_id = -1;
   struct dev_bookkeep *dev_bk;
-  struct flow_metadata **tx_flows = NULL;
-  struct flow_metadata *new_tx_flow = NULL;
+  struct enso_flow *flows;
 
   dev_bk = chr_dev_bk->dev_bk;
-  // Find first available notification buffer. If none are available, return
-  // an error.
   for (i = 0; i < MAX_NB_FLOWS / 8; ++i) {
     int32_t set_pipe_id = 0;
     uint8_t set = dev_bk->tx_pipe_status[i];
@@ -542,25 +540,12 @@ static long alloc_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
       break;
     }
   }
+  flows = dev_bk->flows;
 
-  spin_lock(&dev_bk->lock);
-  tx_flows = dev_bk->tx_flows;
-  if (tx_flows[pipe_id] == NULL) {
-    // insert new flow to the scheduler and tx_flows array
-    printk("Adding new flow with id = %d\n", pipe_id);
-    new_tx_flow = kzalloc(sizeof(struct flow_metadata), GFP_KERNEL);
-    if (new_tx_flow == NULL) {
-      printk("Failed to allocated memory for the new flow metadata\n");
-      spin_unlock(&dev_bk->lock);
-      return -ENOMEM;
-    }
-    new_tx_flow->last_ftime = 0;
-    tx_flows[pipe_id] = new_tx_flow;
-  } else {
-    printk("Pipe ID already allocated\n");
-    return -EFAULT;
+  dev_bk->nb_tx_pipes++;
+  for (i = 0; i < dev_bk->nb_tx_pipes; i++) {
+    flows[i].bytes_limit = MAX_BYTES_LIMIT / dev_bk->nb_tx_pipes;
   }
-  spin_unlock(&dev_bk->lock);
 
   if (pipe_id < 0) {
     printk("couldn't allocate notification buffer.");
@@ -581,10 +566,10 @@ static long free_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   int32_t i, j;
   int32_t pipe_id = (int32_t)uarg;
   struct dev_bookkeep *dev_bk;
-  struct flow_metadata **tx_flows = NULL;
+  struct enso_flow *flows;
 
   dev_bk = chr_dev_bk->dev_bk;
-  tx_flows = dev_bk->tx_flows;
+  flows = dev_bk->flows;
 
   // Check that the buffer ID is valid.
   if (pipe_id < 0 || pipe_id >= MAX_NB_FLOWS) {
@@ -599,16 +584,12 @@ static long free_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   dev_bk->tx_pipe_status[i] &= ~(1 << j);
   chr_dev_bk->tx_pipe_status[i] &= ~(1 << j);
 
-  spin_lock(&dev_bk->lock);
   printk("Freeing TX pipe with id = %d\n", pipe_id);
-  kfree(tx_flows[pipe_id]);
-  tx_flows[pipe_id] = NULL;
-  // we should ideally also delete all the batches currently in the
-  // priority queue pertaining to this flow. however, it is easier
-  // to drop the batch if the flow is freed rather than searching in the entire
-  // heap and restructuring it. see enso_sched() that handles this case.
-  spin_unlock(&dev_bk->lock);
-
+  flows[pipe_id].bytes_limit = 0;
+  dev_bk->nb_tx_pipes--;
+  for (i = 0; i < dev_bk->nb_tx_pipes; i++) {
+    flows[i].bytes_limit = MAX_BYTES_LIMIT / dev_bk->nb_tx_pipes;
+  }
   return 0;
 }
 
@@ -751,9 +732,6 @@ static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk,
 
   notif_buf_pair->allocated = true;
 
-  // update the notification buffer pair in dev_bk
-  dev_bk->notif_buf_pairs[notif_buf_pair->id] = notif_buf_pair;
-
   return 0;
 }
 
@@ -772,10 +750,10 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   struct enso_send_tx_pipe_params stpp;
   struct notification_buf_pair *notif_buf_pair = chr_dev_bk->notif_buf_pair;
   struct dev_bookkeep *dev_bk;
-  struct flow_metadata **tx_flows;
-  struct flow_metadata *flow;
-  struct tx_queue_node *new_node;
+  struct enso_flow *flows;
   int pipe_id;
+  uint64_t time_now;
+  uint64_t time_to_send;
 
   if (copy_from_user(&stpp, (void __user *)uarg, sizeof(stpp))) {
     printk("couldn't copy arg from user.");
@@ -787,35 +765,31 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     return -EFAULT;
   }
   dev_bk = chr_dev_bk->dev_bk;
-
-  new_node = kzalloc(sizeof(struct tx_queue_node), GFP_KERNEL);
-  if (new_node == NULL) {
-    printk("Failed to allocated memory for the new queue node");
-    return -ENOMEM;
-  }
-  new_node->batch.phys_addr = stpp.phys_addr;
-  new_node->batch.notif_buf_id = stpp.notif_buf_id;
-  new_node->batch.pipe_id = stpp.pipe_id;
-  new_node->batch.len = stpp.len;
-  tx_flows = dev_bk->tx_flows;
+  // printk("send_tx_pipe: pipe id = %d\n", stpp.pipe_id);
   pipe_id = stpp.pipe_id;
-
-  spin_lock(&dev_bk->lock);
-  flow = tx_flows[pipe_id];
-  if (flow) {
-    if (flow->last_ftime == 0) {
-      new_node->ftime = dev_bk->stime + stpp.len;
-    } else {
-      new_node->ftime = flow->last_ftime + stpp.len;
-    }
-    flow->last_ftime = new_node->ftime;
-    if (new_node->ftime > dev_bk->stime) {
-      dev_bk->stime = new_node->ftime;
-    }
-    insert_heap(dev_bk->heap, new_node);
+  flows = dev_bk->flows;
+  if (flows[pipe_id].bytes_limit == 0) {
+    printk("max bytes for %d not set\n", pipe_id);
+    return -1;
   }
-  spin_unlock(&dev_bk->lock);
-  return 0;
+
+  time_now = ktime_get_ns();
+  time_to_send = time_now + NSEC_PER_SEC;
+  if ((flows[pipe_id].time_slice == 0) ||
+      flows[pipe_id].time_slice <= time_now) {
+    // either the time slice is not set or the time has crossed
+    // its time slice. reset the counters
+    flows[pipe_id].time_slice = time_to_send;
+    flows[pipe_id].total_bytes = 0;
+  }
+  if ((flows[pipe_id].total_bytes + stpp.len) < flows[pipe_id].bytes_limit) {
+    // send the batch
+    send_batch(notif_buf_pair, &stpp);
+    flows[pipe_id].total_bytes += stpp.len;
+    return 0;
+  }
+  // flow already sent its limit in this second
+  return -1;
 }
 
 /**
@@ -841,19 +815,15 @@ static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
     return -EINVAL;
   }
 
-  spin_lock(&dev_bk->lock);
-
   // first we update the tx head
   update_tx_head(notif_buf_pair);
   completions = notif_buf_pair->nb_unreported_completions;
   if (copy_to_user(user_addr, &completions, sizeof(completions))) {
     printk("couldn't copy information to user.");
-    spin_unlock(&dev_bk->lock);
     return -EFAULT;
   }
   notif_buf_pair->nb_unreported_completions = 0;  // reset
 
-  spin_unlock(&dev_bk->lock);
   return 0;
 }
 
@@ -1478,6 +1448,8 @@ int send_batch(struct notification_buf_pair *notif_buf_pair,
   hugepage_mask = ~((uint64_t)buf_page_size - 1);
   hugepage_base_addr = transf_addr & hugepage_mask;
   hugepage_boundary = hugepage_base_addr + buf_page_size;
+  // printk("tx_head = %d, tx_tail = %d\n", notif_buf_pair->tx_head, tx_tail);
+  // printk("send_batch: pipe id = %d\n", stpp->pipe_id);
 
   while (missing_bytes > 0) {
     free_slots =
@@ -1485,6 +1457,7 @@ int send_batch(struct notification_buf_pair *notif_buf_pair,
 
     // Block until we can send.
     while (unlikely(free_slots == 0)) {
+      // printk("Blocking send_batch\n");
       ++notif_buf_pair->tx_full_cnt;
       update_tx_head(notif_buf_pair);
       free_slots =
@@ -1527,38 +1500,4 @@ void enso_io_write_32(uint32_t data, void *addr) {
 uint32_t enso_io_read_32(void *addr) {
   smp_rmb();
   return ioread32(addr);
-}
-
-int enso_sched(void *data) {
-  struct dev_bookkeep *dev_bk = (struct dev_bookkeep *)data;
-  struct flow_metadata **tx_flows = dev_bk->tx_flows;
-  struct flow_metadata *cur_flow = NULL;
-  struct notification_buf_pair *notif_buf_pair = NULL;
-  struct tx_queue_node *front_node = NULL;
-  struct enso_send_tx_pipe_params *front_batch = NULL;
-  uint32_t notif_buf_id = 0;
-
-  printk("Starting enso_sched\n");
-  while (!kthread_should_stop()) {
-    // dequeue an element from the heap and send it
-    spin_lock(&dev_bk->lock);
-    front_node = top(dev_bk->heap);
-    if (front_node) {
-      front_batch = &front_node->batch;
-      cur_flow = tx_flows[front_batch->pipe_id];
-      // If this check fails, it means that the flow has probably been
-      // freed from free_tx_pipe(). In that case, we just pop it from the
-      // queue.
-      if (cur_flow) {
-        notif_buf_id = front_batch->notif_buf_id;
-        notif_buf_pair = dev_bk->notif_buf_pairs[notif_buf_id];
-        send_batch(notif_buf_pair, front_batch);
-      }
-      pop(dev_bk->heap);
-    }
-    spin_unlock(&dev_bk->lock);
-    yield();
-  }
-  printk("enso_sched exiting\n");
-  return 0;
 }
