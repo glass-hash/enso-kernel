@@ -88,7 +88,6 @@ struct intel_fpga_pcie_size_app_id {
 #include <linux/ioctl.h>
 #include <linux/types.h>
 #include <sys/ioctl.h>
-#include <sys/mman.h>
 
 #define INTEL_FPGA_PCIE_IOCTL_MAGIC 0x70
 #define INTEL_FPGA_PCIE_IOCTL_CHR_SEL_DEV \
