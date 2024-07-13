@@ -35,6 +35,7 @@
 #include <linux/delay.h>
 #include <linux/kthread.h>
 
+// This max bytes limit assumes min sized packets only
 #define MAX_BYTES_LIMIT 9528320000
 
 /******************************************************************************
@@ -774,11 +775,11 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   }
 
   time_now = ktime_get_ns();
-  time_to_send = time_now + NSEC_PER_SEC;
   if ((flows[pipe_id].time_slice == 0) ||
       flows[pipe_id].time_slice <= time_now) {
     // either the time slice is not set or the time has crossed
     // its time slice. reset the counters
+    time_to_send = time_now + NSEC_PER_SEC;
     flows[pipe_id].time_slice = time_to_send;
     flows[pipe_id].total_bytes = 0;
   }
