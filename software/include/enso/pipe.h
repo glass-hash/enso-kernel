@@ -63,10 +63,6 @@ class RxTxPipe;
 class PktIterator;
 class PeekPktIterator;
 
-uint32_t external_peek_next_batch_from_queue(
-    struct RxEnsoPipeInternal* enso_pipe,
-    struct NotificationBufPair* notification_buf_pair, void** buf);
-
 /**
  * @brief A class that represents a device.
  *
@@ -562,6 +558,7 @@ class RxPipe {
    * @return The number of bytes received.
    */
   uint32_t Peek(uint8_t** buf, uint32_t max_nb_bytes);
+  uint32_t PeekFromTail(uint8_t** buf, uint32_t max_nb_bytes);
 
   /**
    * @brief Confirms a certain number of bytes have been received.
@@ -612,6 +609,13 @@ class RxPipe {
     return MessageBatch<T>((uint8_t*)buf, recv, max_nb_messages, this);
   }
 
+  template <typename T>
+  constexpr MessageBatch<T> RecvMessagesFromTail(int32_t max_nb_messages = -1) {
+    uint8_t* buf = nullptr;
+    uint32_t recv = PeekFromTail(&buf, ~0);
+    return MessageBatch<T>((uint8_t*)buf, recv, max_nb_messages, this);
+  }
+
   /**
    * @brief Receives a batch of packets.
    *
@@ -636,6 +640,10 @@ class RxPipe {
    */
   inline MessageBatch<PeekPktIterator> PeekPkts(int32_t max_nb_pkts = -1) {
     return RecvMessages<PeekPktIterator>(max_nb_pkts);
+  }
+
+  inline MessageBatch<PeekPktIterator> PeekPktsFromTail(int32_t max_nb_pkts = -1) {
+    return RecvMessagesFromTail<PeekPktIterator>(max_nb_pkts);
   }
 
   /**
@@ -1130,6 +1138,15 @@ class RxTxPipe {
       int32_t max_nb_pkts = -1) {
     device_->ProcessCompletions();
     return rx_pipe_->PeekPkts(max_nb_pkts);
+  }
+
+  /**
+   * @copydoc RxPipe::PeekPktsFromTail
+   */
+  inline RxPipe::MessageBatch<PeekPktIterator> PeekPktsFromTail(
+      int32_t max_nb_pkts = -1) {
+    device_->ProcessCompletions();
+    return rx_pipe_->PeekPktsFromTail(max_nb_pkts);
   }
 
   /**

@@ -219,6 +219,10 @@ struct chr_dev_bookkeep {
   uint8_t *pipe_status;
 };
 
+struct enso_intel_pcie {
+  void *__iomem base_addr;
+};
+
 int intel_fpga_pcie_probe(struct pci_dev *dev, const struct pci_device_id *id);
 void intel_fpga_pcie_remove(struct pci_dev *dev);
 int intel_fpga_pcie_sriov_configure(struct pci_dev *dev, int numvfs);
