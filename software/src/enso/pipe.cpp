@@ -37,6 +37,7 @@
  * @author Hugo Sadok <sadok@cmu.edu>
  */
 
+#include <dev_backend.h>
 #include <enso/config.h>
 #include <enso/helpers.h>
 #include <enso/pipe.h>
@@ -52,7 +53,6 @@
 #include <string>
 
 #include "../pcie.h"
-#include <dev_backend.h>
 
 namespace enso {
 
@@ -71,26 +71,26 @@ uint32_t RxPipe::Recv(uint8_t** buf, uint32_t max_nb_bytes) {
 inline uint32_t RxPipe::Peek(uint8_t** buf, uint32_t max_nb_bytes) {
   uint32_t* enso_pipe_buf = internal_rx_pipe_.buf;
   uint32_t enso_pipe_head = internal_rx_pipe_.rx_tail;
-  *buf = (uint8_t *)&enso_pipe_buf[enso_pipe_head * 16];
+  *buf = (uint8_t*)&enso_pipe_buf[enso_pipe_head * 16];
   uint32_t flit_aligned_size;
   uint32_t new_rx_tail = 0;
   int32_t pipe_id = internal_rx_pipe_.id;
 
-  flit_aligned_size = consume_rx_kernel(notification_buf_pair_,
-                                        new_rx_tail, pipe_id);
-  if(flit_aligned_size > 0) {
+  flit_aligned_size =
+      consume_rx_kernel(notification_buf_pair_, new_rx_tail, pipe_id);
+  if (flit_aligned_size > 0) {
     internal_rx_pipe_.krx_tail = new_rx_tail;
   }
   return std::min(flit_aligned_size, max_nb_bytes);
 }
 
 uint32_t RxPipe::PeekFromTail(uint8_t** buf, uint32_t max_nb_bytes) {
-  if(internal_rx_pipe_.rx_tail == internal_rx_pipe_.krx_tail) {
+  if (internal_rx_pipe_.rx_tail == internal_rx_pipe_.krx_tail) {
     return 0;
   }
   uint32_t* enso_pipe_buf = internal_rx_pipe_.buf;
   uint32_t enso_pipe_head = internal_rx_pipe_.rx_tail;
-  *buf = (uint8_t *)&enso_pipe_buf[enso_pipe_head * 16];
+  *buf = (uint8_t*)&enso_pipe_buf[enso_pipe_head * 16];
   return std::min(internal_rx_pipe_.last_size, max_nb_bytes);
 }
 

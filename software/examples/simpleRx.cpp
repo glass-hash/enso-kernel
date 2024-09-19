@@ -31,8 +31,8 @@
  */
 
 #include <enso/helpers.h>
-#include <pcap/pcap.h>
 #include <enso/pipe.h>
+#include <pcap/pcap.h>
 
 #include <chrono>
 #include <csignal>
@@ -43,12 +43,12 @@
 
 #include "example_helpers.h"
 
-#define INTEL_FPGA_PCIE_BDF             "65:00.0"
-#define DEFAULT_STATS_DELAY             1000
-#define ONE_MILLION                     1e6
-#define ONE_THOUSAND                    1e3
-#define FPGA_PACKET_OVERHEAD            20
-#define MIN_PACKET_SIZE                 64
+#define INTEL_FPGA_PCIE_BDF "65:00.0"
+#define DEFAULT_STATS_DELAY 1000
+#define ONE_MILLION 1e6
+#define ONE_THOUSAND 1e3
+#define FPGA_PACKET_OVERHEAD 20
+#define MIN_PACKET_SIZE 64
 
 using enso::Device;
 using enso::RxPipe;
@@ -59,31 +59,32 @@ using enso::RxPipe;
  * */
 // used by the RX thread to keep receiving packets
 static int run = 1;
-// used to the main thread to detect when the RX thread exits to stop collecting stats
+// used to the main thread to detect when the RX thread exits to stop collecting
+// stats
 static bool keep_running = true;
 
 void rcv_pkts(std::vector<RxPipe*> rxPipes, enso::stats_t* stats) {
-    while(run) {
-        for(int i = 0; i < 2; i++) {
-          auto& rxPipe = rxPipes[i];
-          auto batch = rxPipe->RecvPkts();
+  while (run) {
+    for (int i = 0; i < 2; i++) {
+      auto& rxPipe = rxPipes[i];
+      auto batch = rxPipe->RecvPkts();
 
-          if (batch.available_bytes() == 0) {
-              continue;
-          }
+      if (batch.available_bytes() == 0) {
+        continue;
+      }
 
-          for (auto pkt : batch) {
-              (void) pkt;
-              ++(stats->nb_pkts);
-          }
-          uint32_t batch_length = batch.processed_bytes();
-          stats->recv_bytes += batch_length;
-          ++(stats->nb_batches);
-          rxPipe->Clear();
-        }
+      for (auto pkt : batch) {
+        (void)pkt;
+        ++(stats->nb_pkts);
+      }
+      uint32_t batch_length = batch.processed_bytes();
+      stats->recv_bytes += batch_length;
+      ++(stats->nb_batches);
+      rxPipe->Clear();
     }
-    // set this so that the main thread exits
-    keep_running = false;
+  }
+  // set this so that the main thread exits
+  keep_running = false;
 }
 
 /*
@@ -91,45 +92,43 @@ void rcv_pkts(std::vector<RxPipe*> rxPipes, enso::stats_t* stats) {
  * Sets the run variable to 0 so that the RX thread exists.
  *
  * */
-void int_handler(int signal __attribute__((unused))) {
-    run = 0;
-}
+void int_handler(int signal __attribute__((unused))) { run = 0; }
 
 int main() {
-    // init signal handler
-    signal(SIGINT, int_handler);
+  // init signal handler
+  signal(SIGINT, int_handler);
 
-    // create the device and initialize the RxPipe
-    std::unique_ptr<Device> dev = Device::Create(INTEL_FPGA_PCIE_BDF);
-    if (!dev) {
-        std::cerr << "Problem creating device" << std::endl;
-        exit(2);
-    }
-    std::vector<RxPipe*> rxPipes;
-    for (uint32_t i = 0; i < 2; ++i) {
-      RxPipe* rxPipe = dev->AllocateRxPipe();
-      if (!rxPipe) {
-        std::cerr << "Problem creating RX pipe" << std::endl;
-        exit(3);
-      }
-
-      uint32_t dst_ip = kBaseIpAddress + i;
-      rxPipe->Bind(kDstPort, 0, dst_ip, 0, kProtocol);
-
-      rxPipes.push_back(rxPipe);
+  // create the device and initialize the RxPipe
+  std::unique_ptr<Device> dev = Device::Create(INTEL_FPGA_PCIE_BDF);
+  if (!dev) {
+    std::cerr << "Problem creating device" << std::endl;
+    exit(2);
+  }
+  std::vector<RxPipe*> rxPipes;
+  for (uint32_t i = 0; i < 2; ++i) {
+    RxPipe* rxPipe = dev->AllocateRxPipe();
+    if (!rxPipe) {
+      std::cerr << "Problem creating RX pipe" << std::endl;
+      exit(3);
     }
 
-    std::vector<enso::stats_t> thread_stats(1);
+    uint32_t dst_ip = kBaseIpAddress + i;
+    rxPipe->Bind(kDstPort, 0, dst_ip, 0, kProtocol);
 
-    // start the RX thread
-    std::thread rx_thread(rcv_pkts, rxPipes, &thread_stats[0]);
-    enso::set_core_id(rx_thread, 0);
+    rxPipes.push_back(rxPipe);
+  }
 
-    // start the stats collection in the main thread
-    show_stats(thread_stats, &keep_running);
+  std::vector<enso::stats_t> thread_stats(1);
 
-    rx_thread.join();
+  // start the RX thread
+  std::thread rx_thread(rcv_pkts, rxPipes, &thread_stats[0]);
+  enso::set_core_id(rx_thread, 0);
 
-    dev.reset();
-    return 0;
+  // start the stats collection in the main thread
+  show_stats(thread_stats, &keep_running);
+
+  rx_thread.join();
+
+  dev.reset();
+  return 0;
 }

@@ -30,8 +30,8 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef SOFTWARE_SRC_BACKENDS_ENSO_DEV_BACKEND_H_
-#define SOFTWARE_SRC_BACKENDS_ENSO_DEV_BACKEND_H_
+#ifndef SOFTWARE_SRC_BACKENDS_ENSO_ENSO_BACKEND_H_
+#define SOFTWARE_SRC_BACKENDS_ENSO_ENSO_BACKEND_H_
 
 #include <enso/helpers.h>
 
@@ -62,9 +62,7 @@ class EnsoBackend {
     }
   }
 
-  void Test() {
-    return dev_->test();
-  }
+  void Test() { return dev_->test(); }
 
   /**
    * @brief Converts an address in the application's virtual address space to an
@@ -164,14 +162,13 @@ class EnsoBackend {
   }
 
   /**
-   * @brief Gets the number of Tx notification that have been consumed by the NIC.
+   * @brief Gets the number of Tx notification that have been consumed by the
+   * NIC.
    *
    * @return Return the number of unreported completions on success.
    *         On error, -1 is returned and errno is set.
    */
-  int GetUnreportedCompletions() {
-    return dev_->get_unreported_completions();
-  }
+  int GetUnreportedCompletions() { return dev_->get_unreported_completions(); }
 
   /**
    * @brief Transmit configuration info to the NIC.
@@ -180,7 +177,7 @@ class EnsoBackend {
    *
    * @return Return 0 on success. On error, -1 is returned and errno is set.
    */
-  int SendConfig(struct TxNotification *txNotification) {
+  int SendConfig(struct TxNotification* txNotification) {
     return dev_->send_config(txNotification);
   }
 
@@ -188,19 +185,15 @@ class EnsoBackend {
     return dev_->allocate_enso_rx_pipe(pipe_id, buf_phys_addr);
   }
 
-  int FreeEnsoRxPipe(int pipe_id) {
-    return dev_->free_enso_rx_pipe(pipe_id);
-  }
+  int FreeEnsoRxPipe(int pipe_id) { return dev_->free_enso_rx_pipe(pipe_id); }
 
-  int ConsumeRxPipe(int &pipe_id, uint32_t &krx_tail) {
+  int ConsumeRxPipe(int& pipe_id, uint32_t& krx_tail) {
     return dev_->consume_rx_pipe(pipe_id, krx_tail);
   }
 
-  int FullyAdvancePipe(int pipe_id) {
-    return dev_->full_adv_pipe(pipe_id);
-  }
+  int FullyAdvancePipe(int pipe_id) { return dev_->full_adv_pipe(pipe_id); }
 
-  int GetNextBatch(int notif_id, int &pipe_id, uint32_t &krx_tail) {
+  int GetNextBatch(int notif_id, int& pipe_id, uint32_t& krx_tail) {
     return dev_->get_next_batch(notif_id, pipe_id, krx_tail);
   }
 
@@ -208,16 +201,12 @@ class EnsoBackend {
     return dev_->advance_pipe(pipe_id, len);
   }
 
-  int NextRxPipeToRecv() {
-    return dev_->next_rx_pipe_to_recv();
-  }
+  int NextRxPipeToRecv() { return dev_->next_rx_pipe_to_recv(); }
 
-  int PrefetchPipe(int pipe_id) {
-    return dev_->prefetch_pipe(pipe_id);
-  }
+  int PrefetchPipe(int pipe_id) { return dev_->prefetch_pipe(pipe_id); }
 
  private:
-  explicit EnsoBackend() noexcept {}
+  EnsoBackend() noexcept {}
 
   EnsoBackend(const EnsoBackend& other) = delete;
   EnsoBackend& operator=(const EnsoBackend& other) = delete;
@@ -237,4 +226,4 @@ class EnsoBackend {
 
 }  // namespace enso
 
-#endif  // SOFTWARE_SRC_BACKENDS_ENSO_DEV_BACKEND_H_
+#endif  // SOFTWARE_SRC_BACKENDS_ENSO_ENSO_BACKEND_H_
