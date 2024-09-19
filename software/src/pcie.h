@@ -78,13 +78,14 @@ int enso_pipe_init(struct RxEnsoPipeInternal* enso_pipe,
                    bool fallback);
 
 uint32_t consume_rx_kernel(struct NotificationBufPair* notification_buf_pair,
-                                  uint32_t &new_rx_tail, int32_t &pipe_id);
+                           uint32_t& new_rx_tail, int32_t& pipe_id);
 
 void advance_pipe_kernel(struct NotificationBufPair* notification_buf_pair,
-                        struct RxEnsoPipeInternal* enso_pipe, size_t len);
+                         struct RxEnsoPipeInternal* enso_pipe, size_t len);
 
-void fully_advance_pipe_kernel(struct RxEnsoPipeInternal* enso_pipe,
-                               struct NotificationBufPair* notification_buf_pair);
+void fully_advance_pipe_kernel(
+    struct RxEnsoPipeInternal* enso_pipe,
+    struct NotificationBufPair* notification_buf_pair);
 
 /**
  * @brief Prefetches a given Enso Pipe.

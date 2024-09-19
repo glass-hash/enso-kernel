@@ -642,7 +642,8 @@ class RxPipe {
     return RecvMessages<PeekPktIterator>(max_nb_pkts);
   }
 
-  inline MessageBatch<PeekPktIterator> PeekPktsFromTail(int32_t max_nb_pkts = -1) {
+  inline MessageBatch<PeekPktIterator> PeekPktsFromTail(
+      int32_t max_nb_pkts = -1) {
     return RecvMessagesFromTail<PeekPktIterator>(max_nb_pkts);
   }
 

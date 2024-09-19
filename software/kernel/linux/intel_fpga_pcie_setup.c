@@ -73,8 +73,7 @@ static void __exit intel_fpga_pcie_exit(void);
 
 static int map_bars_default(struct pci_dev *dev);
 static void unmap_bars(struct pci_dev *dev);
-struct enso_intel_pcie* get_intel_fpga_pcie_addr(void);
-
+struct enso_intel_pcie *get_intel_fpga_pcie_addr(void);
 
 /******************************************************************************
  * PCIe driver functions
@@ -118,7 +117,7 @@ int intel_fpga_pcie_probe(struct pci_dev *dev, const struct pci_device_id *id) {
   dev_bk->enable_rr = false;
 
   intel_enso = kzalloc(sizeof(struct enso_intel_pcie), GFP_KERNEL);
-  if(intel_enso == NULL) {
+  if (intel_enso == NULL) {
     INTEL_FPGA_PCIE_ERR("Enso BAR struct alloc failed\n");
     retval = -ENOMEM;
     goto failed_enso_intel_alloc;
@@ -527,9 +526,7 @@ static void unmap_bars(struct pci_dev *dev) {
   }
 }
 
-struct enso_intel_pcie* get_intel_fpga_pcie_addr() {
-  return intel_enso;
-}
+struct enso_intel_pcie *get_intel_fpga_pcie_addr() { return intel_enso; }
 EXPORT_SYMBOL(get_intel_fpga_pcie_addr);
 
 // Metadata information
