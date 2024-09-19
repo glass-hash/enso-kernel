@@ -1,3 +1,35 @@
+/*
+ * Copyright (c) 2024, Carnegie Mellon University
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted (subject to the limitations in the disclaimer
+ * below) provided that the following conditions are met:
+ *
+ *      * Redistributions of source code must retain the above copyright notice,
+ *      this list of conditions and the following disclaimer.
+ *
+ *      * Redistributions in binary form must reproduce the above copyright
+ *      notice, this list of conditions and the following disclaimer in the
+ *      documentation and/or other materials provided with the distribution.
+ *
+ *      * Neither the name of the copyright holder nor the names of its
+ *      contributors may be used to endorse or promote products derived from
+ *      this software without specific prior written permission.
+ *
+ * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY
+ * THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT
+ * NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 #include "enso_ioctl.h"
 
 /******************************************************************************
@@ -16,23 +48,35 @@ static long alloc_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                        unsigned int __user *user_addr);
 static long free_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg);
 
-static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg);
-static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg);
-static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk, unsigned int __user *user_addr);
+static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk,
+                                 unsigned long uarg);
+static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
+                         unsigned long uarg);
+static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
+                                       unsigned int __user *user_addr);
 
-static long send_config(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg);
-static long alloc_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg);
-static long free_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg);
-static long consume_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg);
-static long fully_advance_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg);
-static long get_next_batch(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg);
-static long advance_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg);
-static long next_rx_pipe_to_recv(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg);
-static long prefetch_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg);
+static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
+                        unsigned long uarg);
+static long alloc_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
+                          unsigned long uarg);
+static long free_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
+                            unsigned long uarg);
+static long consume_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
+                            unsigned long uarg);
+static long fully_advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
+                               unsigned long uarg);
+static long get_next_batch(struct chr_dev_bookkeep *chr_dev_bk,
+                           unsigned long uarg);
+static long advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
+                         unsigned long uarg);
+static long next_rx_pipe_to_recv(struct chr_dev_bookkeep *chr_dev_bk,
+                                 unsigned long uarg);
+static long prefetch_pipe(struct chr_dev_bookkeep *chr_dev_bk,
+                          unsigned long uarg);
 
 /* Helpers */
 static void free_rx_tx_buf(struct chr_dev_bookkeep *chr_dev_bk);
-static void update_tx_head(struct notification_buf_pair* notif_buf_pair);
+static void update_tx_head(struct notification_buf_pair *notif_buf_pair);
 static int32_t get_next_pipe_id(struct notification_buf_pair *notif_buf_pair);
 static uint32_t consume_queue(struct notification_buf_pair *notif_buf_pair,
                               struct rx_pipe_internal *pipe,
@@ -45,14 +89,14 @@ static int32_t get_next_rx_pipe(struct notification_buf_pair *notif_buf_pair,
  * Device and I/O control function
  *****************************************************************************/
 /**
- * enso_unlocked_ioctl() - Responds to the system call ioctl(2).
- * @filp: Pointer to file struct.
- * @cmd:  The command value corresponding to some desired action.
- * @uarg: Optional argument passed to the system call. This could actually
+ * @brief Responds to the system call ioctl(2).
+ * @param filp Pointer to file struct.
+ * @param cmd  The command value corresponding to some desired action.
+ * @param uarg Optional argument passed to the system call. This could actually
  *        be data or it could be a pointer to some structure which has been
  *        casted.
  *
- * @return: 0 on success, negative error code on failure.
+ * @return 0 on success, negative error code on failure.
  */
 long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
                          unsigned long uarg) {
@@ -135,7 +179,8 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
       retval = send_tx_pipe(chr_dev_bk, uarg);
       break;
     case ENSO_IOCTL_GET_UNREPORTED_COMPLETIONS:
-      retval = get_unreported_completions(chr_dev_bk, (unsigned int __user *) uarg);
+      retval =
+          get_unreported_completions(chr_dev_bk, (unsigned int __user *)uarg);
       break;
     case ENSO_IOCTL_SEND_CONFIG:
       retval = send_config(chr_dev_bk, uarg);
@@ -171,18 +216,23 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
   return retval;
 }
 
+/**
+ * @brief Test function to for debugging purposes.
+ *
+ * @return 0 if successful, negative error code otherwise.
+ */
 static int test(void) {
   printk("Hello World\n");
   return 0;
 }
 
 /**
- * get_nb_fallback_queues() - Copies the number of fallback queues to userspace.
+ * @brief Copies the number of fallback queues to userspace.
  *
- * @dev_bk:     Pointer to the device bookkeeping structure.
- * @user_addr:  Address to an unsigned int in user-space to save the result.
+ * @param dev_bk Pointer to the device bookkeeping structure.
+ * @param user_addr Address to an unsigned int in user-space to save the result.
  *
- * Return: 0 if successful, negative error code otherwise.
+ * @return 0 if successful, negative error code otherwise.
  */
 static long get_nb_fallback_queues(struct dev_bookkeep *dev_bk,
                                    unsigned int __user *user_addr) {
@@ -195,12 +245,12 @@ static long get_nb_fallback_queues(struct dev_bookkeep *dev_bk,
 }
 
 /**
- * set_rr_status() - Enables or disables round-robin across fallback queues.
+ * @brief Enables or disables round-robin across fallback queues.
  *
- * @dev_bk:  Pointer to the device bookkeeping structure.
- * @status:  The status to set: true to enable RR, false to disable.
+ * @param dev_bk Pointer to the device bookkeeping structure.
+ * @param status The status to set: true to enable RR, false to disable.
  *
- * Return: 0 if successful, negative error code otherwise.
+ * @return 0 if successful, negative error code otherwise.
  */
 static long set_rr_status(struct dev_bookkeep *dev_bk, bool rr_status) {
   // FIXME(sadok): Right now all this does is to set a variable in the kernel
@@ -219,12 +269,12 @@ static long set_rr_status(struct dev_bookkeep *dev_bk, bool rr_status) {
 }
 
 /**
- * get_rr_status() - Copies the current RR status to userspace.
+ * @brief Copies the current RR status to userspace.
  *
- * @dev_bk:     Pointer to the device bookkeeping structure.
- * @user_addr:  Address to a boolean in user-space to save the result.
+ * @param dev_bk Pointer to the device bookkeeping structure.
+ * @param user_addr Address to a boolean in user-space to save the result.
  *
- * Return: 0 if successful, negative error code otherwise.
+ * @return 0 if successful, negative error code otherwise.
  */
 static long get_rr_status(struct dev_bookkeep *dev_bk, bool __user *user_addr) {
   bool rr_status = dev_bk->enable_rr;
@@ -236,14 +286,15 @@ static long get_rr_status(struct dev_bookkeep *dev_bk, bool __user *user_addr) {
 }
 
 /**
- * alloc_notif_buffer() - Allocates a notification buffer for the current
- *                        device.
+ * @brief Allocates a notification buffer for the current
+ *                        character device handle.
  *
- * @chr_dev_bk: Structure containing information about the current
+ * @param chr_dev_bk Structure containing information about the current
  *              character file handle.
- * @user_addr:  Address to an unsigned int in user-space to save the buffer ID.
+ * @param user_addr Address to an unsigned int in user-space to save the buffer
+ * ID.
  *
- * Return: 0 if successful, negative error code otherwise.
+ * @return 0 if successful, negative error code otherwise.
  */
 static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
                                unsigned int __user *user_addr) {
@@ -293,15 +344,14 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
 }
 
 /**
- * free_notif_buffer() - Frees a notification buffer for the current
- *                       device.
+ * @brief Frees a notification buffer for the current
+ *                      character device handle.
  *
- * @chr_dev_bk: Structure containing information about the current
+ * @param chr_dev_bk Structure containing information about the current
  *              character file handle.
- * @uarg:       The buffer ID to free.
+ * @param uarg The buffer ID to free.
  *
- * Return: 0 if successful, negative error code otherwise.
- *
+ * @return 0 if successful, negative error code otherwise.
  */
 static long free_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
                               unsigned long uarg) {
@@ -335,16 +385,15 @@ static long free_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
 }
 
 /**
- * alloc_pipe() - Allocates a pipe for the current device.
+ * @brief Allocates a pipe for the current device.
  *
- * @chr_dev_bk: Structure containing information about the current
- *              character file handle.
- * @user_addr:  Address to an unsigned int in user-space. It is used as input to
- *              determine if the pipe is a fallback pipe (1 to fallback pipe, 0
- *              if not) and as output to save the pipe ID.
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param user_addr Address to an unsigned int in user-space. It is used as
+ * input to determine if the pipe is a fallback pipe (1 to fallback pipe, 0 if
+ * not) and as output to save the pipe ID.
  *
- * Return: 0 if successful, negative error code otherwise.
- *
+ * @return 0 if successful, negative error code otherwise.
  */
 static long alloc_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                        unsigned int __user *user_addr) {
@@ -428,14 +477,13 @@ static long alloc_pipe(struct chr_dev_bookkeep *chr_dev_bk,
 }
 
 /**
- * free_pipe() - Frees a pipe for the current device.
+ * @brief Frees an Rx pipe for the current character device handle.
  *
- * @chr_dev_bk: Structure containing information about the current
- *              character file handle.
- * @uarg:       The pipe ID to free.
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param uarg The pipe ID to free.
  *
- * Return: 0 if successful, negative error code otherwise.
- *
+ * @return 0 if successful, negative error code otherwise.
  */
 static long free_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg) {
   int32_t i, j;
@@ -480,16 +528,17 @@ static long free_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg) {
 }
 
 /**
- * alloc_notif_buf_pair() - Allocates a notification buffer
+ * @brief Allocates a notification buffer.
  *
- * @chr_dev_bk: Structure containing information about the current
- *              character file handle.
- * @uarg:       The notification buffer ID.
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param uarg The notification buffer ID of the notification buffer to be
+ * allocated.
  *
- * Return: 0 if successful, negative error code otherwise.
- *
+ * @return 0 if successful, negative error code otherwise.
  */
-static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg) {
+static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk,
+                                 unsigned long uarg) {
   int32_t buf_id = (int32_t)uarg;
   struct dev_bookkeep *dev_bk;
   struct notification_buf_pair *notif_buf_pair;
@@ -517,18 +566,12 @@ static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk, unsigned l
     return -EINVAL;
   }
 
-  // check if notification buf pair already allocated
-  if(notif_buf_pair->allocated) {
-    printk("Notification buf pair already allocated.\n");
-    return -EINVAL;
-  }
-
   // 2. Map BAR into queue regs
-  bar2_addr = (uint8_t *) global_bk.intel_enso->base_addr;
-  nbp_q_regs = (struct queue_regs *)(bar2_addr
-                                   + (notif_buf_pair->id + MAX_NB_FLOWS)
-                                   * MEM_PER_QUEUE);
-  // TODO:Create wrappers on top of these ioread/write functions
+  bar2_addr = (uint8_t *)global_bk.intel_enso->base_addr;
+  nbp_q_regs =
+      (struct queue_regs *)(bar2_addr + (notif_buf_pair->id + MAX_NB_FLOWS) *
+                                            MEM_PER_QUEUE);
+  // TODO(kshitij): Create wrappers on top of these ioread/write functions
   // initialize the queue registers
   smp_wmb();
   iowrite32(0, &nbp_q_regs->rx_mem_low);
@@ -536,37 +579,33 @@ static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk, unsigned l
   iowrite32(0, &nbp_q_regs->rx_mem_high);
 
   smp_rmb();
-  while(ioread32(&nbp_q_regs->rx_mem_low) != 0)
-      continue;
+  while (ioread32(&nbp_q_regs->rx_mem_low) != 0) continue;
   smp_rmb();
-  while(ioread32(&nbp_q_regs->rx_mem_high) != 0)
-      continue;
+  while (ioread32(&nbp_q_regs->rx_mem_high) != 0) continue;
 
   smp_wmb();
   iowrite32(0, &nbp_q_regs->rx_tail);
   smp_rmb();
-  while(ioread32(&nbp_q_regs->rx_tail) != 0)
-      continue;
+  while (ioread32(&nbp_q_regs->rx_tail) != 0) continue;
 
   smp_wmb();
   iowrite32(0, &nbp_q_regs->rx_head);
   smp_rmb();
-  while(ioread32(&nbp_q_regs->rx_head) != 0)
-      continue;
+  while (ioread32(&nbp_q_regs->rx_head) != 0) continue;
 
   notif_buf_pair->regs = nbp_q_regs;
 
   // 3. Allocate TX and RX notification buffers
-  // TODO: Think if we can move these buffers in the userspace
-  notif_buf_pair->rx_buf = (struct rx_notification *)kmalloc(rx_tx_buf_size, GFP_DMA);
-  if(notif_buf_pair->rx_buf == NULL) {
+  notif_buf_pair->rx_buf =
+      (struct rx_notification *)kmalloc(rx_tx_buf_size, GFP_DMA);
+  if (notif_buf_pair->rx_buf == NULL) {
     printk("RX_TX allocation failed");
     return -ENOMEM;
   }
   // reserve these pages, so that they are not swapped out
-  for(;page_ind <  rx_tx_buf_size;
-        page_ind += PAGE_SIZE) {
-    SetPageReserved(virt_to_page(((unsigned long)notif_buf_pair->rx_buf) + page_ind));
+  for (; page_ind < rx_tx_buf_size; page_ind += PAGE_SIZE) {
+    SetPageReserved(
+        virt_to_page(((unsigned long)notif_buf_pair->rx_buf) + page_ind));
   }
   rx_buf_phys_addr = virt_to_phys(notif_buf_pair->rx_buf);
 
@@ -575,8 +614,9 @@ static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk, unsigned l
   // second half for the tx notification buffers
   memset(notif_buf_pair->rx_buf, 0, NOTIFICATION_BUF_SIZE * 64);
 
-  notif_buf_pair->tx_buf = (struct tx_notification *)(
-                                    (uint64_t) notif_buf_pair->rx_buf + (rx_tx_buf_size/2));
+  notif_buf_pair->tx_buf =
+      (struct tx_notification *)((uint64_t)notif_buf_pair->rx_buf +
+                                 (rx_tx_buf_size / 2));
   memset(notif_buf_pair->tx_buf, 0, NOTIFICATION_BUF_SIZE * 64);
 
   // 4. Initialize notification buf pair finally
@@ -592,24 +632,26 @@ static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk, unsigned l
   iowrite32(notif_buf_pair->tx_head, &nbp_q_regs->tx_head);
 
   notif_buf_pair->pending_rx_pipe_tails = (uint32_t *)kmalloc(
-                    sizeof(*(notif_buf_pair->pending_rx_pipe_tails)) * 8192, GFP_KERNEL);
-  if(notif_buf_pair->pending_rx_pipe_tails == NULL) {
+      sizeof(*(notif_buf_pair->pending_rx_pipe_tails)) * 8192, GFP_KERNEL);
+  if (notif_buf_pair->pending_rx_pipe_tails == NULL) {
     printk("Pending RX pipe tails allocation failed");
     free_rx_tx_buf(chr_dev_bk);
     return -ENOMEM;
   }
   memset(notif_buf_pair->pending_rx_pipe_tails, 0, 8192);
 
-  notif_buf_pair->wrap_tracker = (uint8_t *)kmalloc(NOTIFICATION_BUF_SIZE / 8, GFP_KERNEL);
-  if(notif_buf_pair->wrap_tracker == NULL) {
+  notif_buf_pair->wrap_tracker =
+      (uint8_t *)kmalloc(NOTIFICATION_BUF_SIZE / 8, GFP_KERNEL);
+  if (notif_buf_pair->wrap_tracker == NULL) {
     kfree(notif_buf_pair->pending_rx_pipe_tails);
     free_rx_tx_buf(chr_dev_bk);
     return -ENOMEM;
   }
   memset(notif_buf_pair->wrap_tracker, 0, NOTIFICATION_BUF_SIZE / 8);
 
-  notif_buf_pair->next_rx_pipe_ids = (uint32_t *) kmalloc(sizeof(uint32_t) * NOTIFICATION_BUF_SIZE, GFP_KERNEL);
-  if(notif_buf_pair->next_rx_pipe_ids == NULL) {
+  notif_buf_pair->next_rx_pipe_ids =
+      (uint32_t *)kmalloc(sizeof(uint32_t) * NOTIFICATION_BUF_SIZE, GFP_KERNEL);
+  if (notif_buf_pair->next_rx_pipe_ids == NULL) {
     printk("Pending RX pipe tails allocation failed");
     kfree(notif_buf_pair->wrap_tracker);
     kfree(notif_buf_pair->pending_rx_pipe_tails);
@@ -636,28 +678,26 @@ static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk, unsigned l
   smp_wmb();
   iowrite32((uint32_t)(rx_buf_phys_addr >> 32), &nbp_q_regs->tx_mem_high);
 
-  notif_buf_pair->allocated = true;
-
   up(&dev_bk->sem);
 
   return 0;
 }
 
 /**
- * send_tx_pipe() - Send a TxPipe to the NIC.
+ * @brief Send a Tx notification to the NIC.
  *
- * @chr_dev_bk: Structure containing information about the current
- *              character file handle.
- * @uarg:       struct enso_send_tx_pipe_params sent from the userspace.
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param uarg struct enso_send_tx_pipe_params sent from the userspace.
  *
- * Return: 0 if successful, negative error code otherwise.
- *
+ * @return 0 if successful, negative error code otherwise.
  */
-static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg) {
+static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
+                         unsigned long uarg) {
   struct enso_send_tx_pipe_params stpp;
   struct notification_buf_pair *notif_buf_pair = chr_dev_bk->notif_buf_pair;
-  struct tx_notification* tx_buf;
-  struct tx_notification* new_tx_notification;
+  struct tx_notification *tx_buf;
+  struct tx_notification *new_tx_notification;
   struct dev_bookkeep *dev_bk;
   uint32_t tx_tail;
   uint32_t missing_bytes;
@@ -674,13 +714,12 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg
 
   uint32_t buf_page_size = HUGE_PAGE_SIZE;
 
-  // printk(KERN_CRIT "Send TX Pipe\n");
   if (copy_from_user(&stpp, (void __user *)uarg, sizeof(stpp))) {
     printk("couldn't copy arg from user.");
     return -EFAULT;
   }
 
-  if(notif_buf_pair == NULL) {
+  if (notif_buf_pair == NULL) {
     printk("Notification buffer is invalid");
     return -EFAULT;
   }
@@ -700,10 +739,9 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg
   hugepage_base_addr = transf_addr & hugepage_mask;
   hugepage_boundary = hugepage_base_addr + buf_page_size;
 
-  //printk("Send request received from: %llx, %x, %x\n", stpp.phys_addr, stpp.len, stpp.id);
-
   while (missing_bytes > 0) {
-    free_slots = (notif_buf_pair->tx_head - tx_tail - 1) % NOTIFICATION_BUF_SIZE;
+    free_slots =
+        (notif_buf_pair->tx_head - tx_tail - 1) % NOTIFICATION_BUF_SIZE;
 
     // Block until we can send.
     while (unlikely(free_slots == 0)) {
@@ -714,9 +752,11 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg
     }
 
     new_tx_notification = tx_buf + tx_tail;
-    req_length = (missing_bytes < MAX_TRANSFER_LEN) ? missing_bytes : MAX_TRANSFER_LEN;
+    req_length =
+        (missing_bytes < MAX_TRANSFER_LEN) ? missing_bytes : MAX_TRANSFER_LEN;
     missing_bytes_in_page = hugepage_boundary - transf_addr;
-    req_length = (req_length < missing_bytes_in_page) ? req_length : missing_bytes_in_page;
+    req_length = (req_length < missing_bytes_in_page) ? req_length
+                                                      : missing_bytes_in_page;
 
     // If the transmission needs to be split among multiple requests, we
     // need to set a bit in the wrap tracker.
@@ -738,40 +778,35 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg
   smp_wmb();
   iowrite32(tx_tail, notif_buf_pair->tx_tail_ptr);
 
-  // req_length = 0;
-  // while(req_length < 27500) {
-  //   asm("nop");
-  //   req_length++;
-  // }
-
   up(&dev_bk->sem);
 
   return 0;
 }
 
 /**
- * get_unreported_completions() - Returns a count of the number of unreported
- *                                TX notifications that have been marked completed
- *                                by the NIC but the application has not freed their buffer.
+ * @brief Calculates a count of the number of unreported
+ *        Tx notifications that have been marked completed
+ *        by the NIC but the application has not freed their buffer.
  *
- * @chr_dev_bk: Structure containing information about the current
+ * @param chr_dev_bk Structure containing information about the current
  *              character file handle.
- * @user_addr:  Copy the unreported count to this variable in userspace.
+ * @param user_addr  Copy the unreported count to this variable in userspace.
  *
+ * @return 0 for success, negative error code otherwise.
  */
-static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk, unsigned int __user *user_addr) {
+static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
+                                       unsigned int __user *user_addr) {
   struct dev_bookkeep *dev_bk;
   uint32_t completions;
   struct notification_buf_pair *notif_buf_pair;
 
   notif_buf_pair = chr_dev_bk->notif_buf_pair;
   dev_bk = chr_dev_bk->dev_bk;
-  // printk(KERN_CRIT "get_unreported_completions\n");
   if (unlikely(down_interruptible(&dev_bk->sem))) {
     printk("interrupted while attempting to obtain device semaphore.");
     return -ERESTARTSYS;
   }
-  if(notif_buf_pair == NULL) {
+  if (notif_buf_pair == NULL) {
     printk("Notification buf pair is NULL");
     return -EINVAL;
   }
@@ -783,23 +818,24 @@ static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk, unsi
     printk("couldn't copy information to user.");
     return -EFAULT;
   }
-  notif_buf_pair->nb_unreported_completions = 0; // reset
+  notif_buf_pair->nb_unreported_completions = 0;  // reset
   up(&dev_bk->sem);
   return 0;
 }
 
 /**
- * send_config() - Send a configuration message to the NIC.
+ * @brief Send a configuration message to the NIC.
  *
- * @chr_dev_bk: Structure containing information about the current
- *              character file handle.
- * @uarg:       struct tx_notification sent from the userspace.
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param uarg struct `tx_notification` sent from the userspace.
  *
- * Return: 0 if successful, negative error code otherwise.
+ * @return 0 if successful, negative error code otherwise.
  */
-static long send_config(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg) {
+static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
+                        unsigned long uarg) {
   struct notification_buf_pair *notif_buf_pair = chr_dev_bk->notif_buf_pair;
-  struct tx_notification* tx_buf = notif_buf_pair->tx_buf;
+  struct tx_notification *tx_buf = notif_buf_pair->tx_buf;
   uint32_t tx_tail = notif_buf_pair->tx_tail;
   uint32_t free_slots =
       (notif_buf_pair->tx_head - tx_tail - 1) % NOTIFICATION_BUF_SIZE;
@@ -808,7 +844,8 @@ static long send_config(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg)
   struct dev_bookkeep *dev_bk;
   uint32_t nb_unreported_completions;
 
-  if (copy_from_user(&config_notification, (void __user *)uarg, sizeof(config_notification))) {
+  if (copy_from_user(&config_notification, (void __user *)uarg,
+                     sizeof(config_notification))) {
     printk("couldn't copy arg from user.");
     return -EFAULT;
   }
@@ -854,8 +891,17 @@ static long send_config(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg)
   return 0;
 }
 
+/**
+ * @brief Allocates an Rx Enso Pipe.
+ *
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param uarg `enso_pipe_init_params` sent from the userspace.
+ *
+ * @return 0 if successful, negative error code otherwise.
+ */
 static long alloc_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
-                               unsigned long uarg) {
+                          unsigned long uarg) {
   struct enso_pipe_init_params params;
   struct dev_bookkeep *dev_bk;
   struct rx_pipe_internal **rx_pipes;
@@ -880,30 +926,28 @@ static long alloc_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   pipe_id = params.id;
   printk("Allocating enso RX pipe with ID = %d\n", pipe_id);
   rx_pipes = chr_dev_bk->rx_pipes;
-  if(rx_pipes == NULL) {
+  if (rx_pipes == NULL) {
     printk("Enso pipes not allocated\n");
     return -EINVAL;
   }
   // check if pipe already allocated
-  if(rx_pipes[pipe_id]) {
-    if(rx_pipes[pipe_id]->allocated) {
+  if (rx_pipes[pipe_id]) {
+    if (rx_pipes[pipe_id]->allocated) {
       printk("Rx enso pipe already allocated.\n");
       return -EINVAL;
     }
   }
   new_enso_rx_pipe = kzalloc(sizeof(struct rx_pipe_internal), GFP_KERNEL);
-  if(new_enso_rx_pipe == NULL) {
+  if (new_enso_rx_pipe == NULL) {
     printk("Memory failure\n");
     return -ENOMEM;
   }
   new_enso_rx_pipe->id = pipe_id;
 
   // 2. Map BAR into queue regs
-  bar2_addr = (uint8_t *) global_bk.intel_enso->base_addr;
-  rep_q_regs = (struct queue_regs *)(bar2_addr
-                                   + (pipe_id
-                                   * MEM_PER_QUEUE));
-  new_enso_rx_pipe->regs = (struct queue_regs *) rep_q_regs;
+  bar2_addr = (uint8_t *)global_bk.intel_enso->base_addr;
+  rep_q_regs = (struct queue_regs *)(bar2_addr + (pipe_id * MEM_PER_QUEUE));
+  new_enso_rx_pipe->regs = (struct queue_regs *)rep_q_regs;
 
   // initialize the queue
   smp_wmb();
@@ -912,29 +956,26 @@ static long alloc_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   iowrite32(0, &rep_q_regs->rx_mem_high);
 
   smp_rmb();
-  while(ioread32(&rep_q_regs->rx_mem_low) != 0)
-      continue;
+  while (ioread32(&rep_q_regs->rx_mem_low) != 0) continue;
   smp_rmb();
-  while(ioread32(&rep_q_regs->rx_mem_high) != 0)
-      continue;
+  while (ioread32(&rep_q_regs->rx_mem_high) != 0) continue;
 
   smp_wmb();
   iowrite32(0, &rep_q_regs->rx_tail);
   smp_rmb();
-  while(ioread32(&rep_q_regs->rx_tail) != 0)
-      continue;
+  while (ioread32(&rep_q_regs->rx_tail) != 0) continue;
 
   smp_wmb();
   iowrite32(0, &rep_q_regs->rx_head);
   smp_rmb();
-  while(ioread32(&rep_q_regs->rx_head) != 0)
-      continue;
+  while (ioread32(&rep_q_regs->rx_head) != 0) continue;
 
-  new_enso_rx_pipe->buf_head_ptr = (uint32_t*)&rep_q_regs->rx_head;
+  new_enso_rx_pipe->buf_head_ptr = (uint32_t *)&rep_q_regs->rx_head;
   new_enso_rx_pipe->rx_head = 0;
   new_enso_rx_pipe->rx_tail = 0;
 
-  chr_dev_bk->notif_buf_pair->pending_rx_pipe_tails[pipe_id] = new_enso_rx_pipe->rx_head;
+  chr_dev_bk->notif_buf_pair->pending_rx_pipe_tails[pipe_id] =
+      new_enso_rx_pipe->rx_head;
   rx_buf_phys_addr = params.phys_addr;
 
   smp_wmb();
@@ -951,14 +992,23 @@ static long alloc_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   return 0;
 }
 
+/**
+ * @brief Frees an Rx pipe based on the pipe ID.
+ *
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param uarg Rx pipe ID to be free (sent from the userspace).
+ *
+ * @return 0 if successful, negative error code otherwise.
+ */
 static long free_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
-                         unsigned long uarg) {
+                            unsigned long uarg) {
   struct dev_bookkeep *dev_bk;
   struct rx_pipe_internal **rx_pipes;
   int32_t pipe_id = (int32_t)uarg;
 
   rx_pipes = chr_dev_bk->rx_pipes;
-  if(rx_pipes[pipe_id] == NULL) {
+  if (rx_pipes[pipe_id] == NULL) {
     printk("Pipe id %d does not exist\n", pipe_id);
     return -EFAULT;
   }
@@ -976,6 +1026,17 @@ static long free_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
   return 0;
 }
 
+/**
+ * @brief Checks if a certain Rx pipe has new data available or goes through
+ * all the pipes in the notification buffer and sees which one does.
+ *
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param uarg struct `enso_consume_rx_params` containing information about the
+ * pipe.
+ *
+ * @return 0 on success, negative value with error code set otherwise.
+ * */
 static long consume_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                             unsigned long uarg) {
   struct dev_bookkeep *dev_bk;
@@ -993,7 +1054,7 @@ static long consume_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   }
 
   if (copy_from_user(&params, (struct enso_consume_rx_params __user *)uarg,
-                    sizeof(struct enso_consume_rx_params))) {
+                     sizeof(struct enso_consume_rx_params))) {
     printk("couldn't copy arg from user.");
     up(&dev_bk->sem);
     return -EFAULT;
@@ -1005,22 +1066,22 @@ static long consume_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   // in case the userspace sets the pipe_id properly, we need to fetch the
   // new tails for that specific pipe_id. otherwise, if pipe_id is -1,
   // we check which pipe_id is now available and send it back to the userspace
-  if(params.id != -1) {
+  if (params.id != -1) {
     get_new_tails(notif_buf_pair);
     pipe_id = params.id;
   } else {
     pipe_id = get_next_rx_pipe(notif_buf_pair, rx_pipes);
-    if(pipe_id == -1) {
-        // no new pipes are available to be fetched from
-        // return back to userspace
-        up(&dev_bk->sem);
-        return 0;
+    if (pipe_id == -1) {
+      // no new pipes are available to be fetched from
+      // return back to userspace
+      up(&dev_bk->sem);
+      return 0;
     }
     params.id = pipe_id;
   }
 
   pipe = rx_pipes[pipe_id];
-  if(pipe == NULL) {
+  if (pipe == NULL) {
     printk("No pipe with ID = %d\n", pipe_id);
     up(&dev_bk->sem);
     return -EFAULT;
@@ -1030,7 +1091,7 @@ static long consume_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   flit_aligned_size = consume_queue(notif_buf_pair, pipe, &params.new_rx_tail);
 
   if (copy_to_user((struct enso_consume_rx_params __user *)uarg, &params,
-                  sizeof(struct enso_consume_rx_params))) {
+                   sizeof(struct enso_consume_rx_params))) {
     printk("couldn't copy head to user.");
     up(&dev_bk->sem);
     return -EFAULT;
@@ -1041,6 +1102,17 @@ static long consume_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   return flit_aligned_size;
 }
 
+/**
+ * @brief Advances the head pointer of the Rx notification buffer to where the
+ * tail of the buffer is. This lets the NIC know that application has consumed
+ * these notifications and it can safely reuse the memory.
+ *
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param uarg pipe ID that has to be advanced.
+ *
+ * @return 0 on success, negative integer on failure.
+ * */
 static long fully_advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                                unsigned long uarg) {
   struct dev_bookkeep *dev_bk;
@@ -1054,16 +1126,17 @@ static long fully_advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     return -ERESTARTSYS;
   }
 
-  if (copy_from_user(&enso_pipe_id, (void __user *)uarg, sizeof(enso_pipe_id))) {
+  if (copy_from_user(&enso_pipe_id, (void __user *)uarg,
+                     sizeof(enso_pipe_id))) {
     printk("couldn't copy arg from user.");
     return -EFAULT;
   }
 
   rx_enso_pipes = chr_dev_bk->rx_pipes;
   pipe = rx_enso_pipes[enso_pipe_id];
-  if(pipe == NULL) {
-      printk("Pipe ID %d is NULL\n", enso_pipe_id);
-      return -EFAULT;
+  if (pipe == NULL) {
+    printk("Pipe ID %d is NULL\n", enso_pipe_id);
+    return -EFAULT;
   }
   smp_wmb();
   iowrite32(pipe->rx_tail, pipe->buf_head_ptr);
@@ -1073,6 +1146,18 @@ static long fully_advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   return 0;
 }
 
+/**
+ * @brief Advances the head pointer of the Rx notification buffer by a specified
+ * length for a pipe ID. This lets the NIC know that application has consumed
+ * these notifications and it can safely reuse the memory.
+ *
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param uarg struct `enso_advance_pipe_params` contains the pipe ID and the
+ * amount by the pipe has to be advanced.
+ *
+ * @return 0 on success, negative integer with error code on failure.
+ * */
 static long advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                          unsigned long uarg) {
   struct dev_bookkeep *dev_bk;
@@ -1100,9 +1185,9 @@ static long advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   len = param.len;
   rx_enso_pipes = chr_dev_bk->rx_pipes;
   pipe = rx_enso_pipes[enso_pipe_id];
-  if(pipe == NULL) {
-      printk("Pipe ID %d is NULL\n", enso_pipe_id);
-      return -EFAULT;
+  if (pipe == NULL) {
+    printk("Pipe ID %d is NULL\n", enso_pipe_id);
+    return -EFAULT;
   }
 
   rx_pkt_head = pipe->rx_head;
@@ -1117,6 +1202,18 @@ static long advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   return 0;
 }
 
+/**
+ * @brief Gets the next batch of packets to be received in a pipe.
+ *
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param uarg struct `enso_get_next_batch_params` that contains the pipe ID.
+ * The kernel sets the `rx_tail` property of this structure with the current
+ * tail value of the pipe.
+ *
+ * @return negative integer with error code on failure. number of bytes
+ * available in the pipe (flit size aligned).
+ * */
 static long get_next_batch(struct chr_dev_bookkeep *chr_dev_bk,
                            unsigned long uarg) {
   struct dev_bookkeep *dev_bk;
@@ -1134,7 +1231,7 @@ static long get_next_batch(struct chr_dev_bookkeep *chr_dev_bk,
   }
 
   if (copy_from_user(&params, (struct enso_get_next_batch_params __user *)uarg,
-                    sizeof(struct enso_get_next_batch_params))) {
+                     sizeof(struct enso_get_next_batch_params))) {
     printk("couldn't copy arg from user.");
     return -EFAULT;
   }
@@ -1143,13 +1240,13 @@ static long get_next_batch(struct chr_dev_bookkeep *chr_dev_bk,
 
   enso_pipe_id = get_next_pipe_id(notif_buf_pair);
   params.pipe_id = enso_pipe_id;
-  if(enso_pipe_id == -1) {
+  if (enso_pipe_id == -1) {
     up(&dev_bk->sem);
     return -EFAULT;
   }
   rx_pipes = chr_dev_bk->rx_pipes;
   pipe = rx_pipes[enso_pipe_id];
-  if(pipe == NULL) {
+  if (pipe == NULL) {
     printk("No pipe with ID = %d\n", enso_pipe_id);
     up(&dev_bk->sem);
     return -EFAULT;
@@ -1158,7 +1255,7 @@ static long get_next_batch(struct chr_dev_bookkeep *chr_dev_bk,
   flit_aligned_size = consume_queue(notif_buf_pair, pipe, &params.new_rx_tail);
 
   if (copy_to_user((struct enso_get_next_batch_params __user *)uarg, &params,
-                  sizeof(struct enso_get_next_batch_params))) {
+                   sizeof(struct enso_get_next_batch_params))) {
     printk("couldn't copy head to user.");
     up(&dev_bk->sem);
     return -EFAULT;
@@ -1169,6 +1266,15 @@ static long get_next_batch(struct chr_dev_bookkeep *chr_dev_bk,
   return flit_aligned_size;
 }
 
+/**
+ * @brief Checks for the next pipe ID that can be used to receive packets.
+ *
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ *
+ * @return negative integer with error code on failure. pipe ID of the pipe to
+ * be checked next on success.
+ * */
 static long next_rx_pipe_to_recv(struct chr_dev_bookkeep *chr_dev_bk,
                                  unsigned long uarg) {
   struct dev_bookkeep *dev_bk;
@@ -1179,7 +1285,7 @@ static long next_rx_pipe_to_recv(struct chr_dev_bookkeep *chr_dev_bk,
   uint32_t enso_pipe_head;
   uint32_t enso_pipe_tail;
 
-  (void) uarg;
+  (void)uarg;
   dev_bk = chr_dev_bk->dev_bk;
   if (unlikely(down_interruptible(&dev_bk->sem))) {
     printk("interrupted while attempting to obtain device semaphore.");
@@ -1190,15 +1296,15 @@ static long next_rx_pipe_to_recv(struct chr_dev_bookkeep *chr_dev_bk,
   rx_enso_pipes = chr_dev_bk->rx_pipes;
 
   pipe_id = get_next_pipe_id(notif_buf_pair);
-  while(pipe_id >= 0) {
+  while (pipe_id >= 0) {
     pipe = rx_enso_pipes[pipe_id];
-    if(pipe == NULL) {
+    if (pipe == NULL) {
       printk("Pipe ID = %d is NULL\n", pipe_id);
       return -1;
     }
     enso_pipe_head = pipe->rx_tail;
     enso_pipe_tail = notif_buf_pair->pending_rx_pipe_tails[pipe_id];
-    if(enso_pipe_head != enso_pipe_tail) {
+    if (enso_pipe_head != enso_pipe_tail) {
       smp_wmb();
       iowrite32(pipe->rx_head, pipe->buf_head_ptr);
       break;
@@ -1210,6 +1316,15 @@ static long next_rx_pipe_to_recv(struct chr_dev_bookkeep *chr_dev_bk,
   return pipe_id;
 }
 
+/**
+ * @brief Prefetches data from a pipe based on its ID.
+ *
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param uarg pipe ID that has to be prefetched.
+ *
+ * @return the pipe ID if fetched successfully, or else a negative error code.
+ * */
 static long prefetch_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                           unsigned long uarg) {
   struct dev_bookkeep *dev_bk;
@@ -1233,9 +1348,9 @@ static long prefetch_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   rx_enso_pipes = chr_dev_bk->rx_pipes;
   pipe = rx_enso_pipes[pipe_id];
 
-  if(pipe == NULL) {
-      printk("Pipe ID %d is NULL\n", pipe_id);
-      return -EFAULT;
+  if (pipe == NULL) {
+    printk("Pipe ID %d is NULL\n", pipe_id);
+    return -EFAULT;
   }
 
   smp_wmb();
@@ -1249,11 +1364,10 @@ static long prefetch_pipe(struct chr_dev_bookkeep *chr_dev_bk,
  * Helper functions
  *****************************************************************************/
 /**
- * free_rx_tx_buf() - Frees the RX/TX notification buffers.
- *                    Helper function to alloc_notif_buf_pair.
+ * @brief Frees the RX/TX notification buffer. Used by `alloc_notif_buf_pair`.
  *
- * @chr_dev_bk: Structure containing information about the current
- *              character file handle.
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
  */
 void free_rx_tx_buf(struct chr_dev_bookkeep *chr_dev_bk) {
   // Each RX/TX notification buffer is 2MB in size. There are
@@ -1261,35 +1375,33 @@ void free_rx_tx_buf(struct chr_dev_bookkeep *chr_dev_bk) {
   size_t rx_tx_buf_size = 512 * PAGE_SIZE;
   uint32_t page_ind = 0;
   struct rx_notification *rx_notif = NULL;
-  if(chr_dev_bk == NULL) {
+  if (chr_dev_bk == NULL) {
     return;
   }
-  if(chr_dev_bk->notif_buf_pair == NULL) {
+  if (chr_dev_bk->notif_buf_pair == NULL) {
     return;
   }
   rx_notif = chr_dev_bk->notif_buf_pair->rx_buf;
-  for(;page_ind < rx_tx_buf_size;
-       page_ind += PAGE_SIZE) {
+  for (; page_ind < rx_tx_buf_size; page_ind += PAGE_SIZE) {
     ClearPageReserved(virt_to_page(((unsigned long)rx_notif) + page_ind));
   }
   kfree(rx_notif);
 }
 
 /**
- * update_tx_head() - Checks which TX notifications have been
- *                    processed and updated the relevant pointers
- *                    and variables in the notification_buf_pair.
- *                    Used by send_tx_pipe and get_unreported_completions.
+ * @brief Checks which TX notifications have been
+ *        consumed by the NIC and updates the relevant pointers
+ *        and variables in the notification_buf_pair.
+ *        Used by send_tx_pipe and get_unreported_completions.
  *
- * @notif_buf_pair: Structure containing information about the notification
- *                  buffer.
+ * @param notif_buf_pair Structure containing information about the notification
+ * buffer.
  */
-// TODO: Fix the magic numbers.
-void update_tx_head(struct notification_buf_pair* notif_buf_pair) {
-  struct tx_notification* tx_buf = notif_buf_pair->tx_buf;
+void update_tx_head(struct notification_buf_pair *notif_buf_pair) {
+  struct tx_notification *tx_buf = notif_buf_pair->tx_buf;
   uint32_t head = notif_buf_pair->tx_head;
   uint32_t tail = notif_buf_pair->tx_tail;
-  struct tx_notification* tx_notif;
+  struct tx_notification *tx_notif;
   uint16_t i;
   uint8_t wrap_tracker_mask;
   uint8_t no_wrap;
@@ -1317,8 +1429,7 @@ void update_tx_head(struct notification_buf_pair* notif_buf_pair) {
     // same cache line, we can get rid of `wrap_tracker` and instead check
     // for two notifications.
     wrap_tracker_mask = 1 << (head & 0x7);
-    no_wrap =
-        !(notif_buf_pair->wrap_tracker[head / 8] & wrap_tracker_mask);
+    no_wrap = !(notif_buf_pair->wrap_tracker[head / 8] & wrap_tracker_mask);
     notif_buf_pair->nb_unreported_completions += no_wrap;
     notif_buf_pair->wrap_tracker[head / 8] &= ~wrap_tracker_mask;
 
@@ -1328,11 +1439,20 @@ void update_tx_head(struct notification_buf_pair* notif_buf_pair) {
   notif_buf_pair->tx_head = head;
 }
 
+/**
+ * @brief Frees an Rx enso pipe by setting the necessary registers in
+ * `rx_pipe_internal`. Used by `free_rx_pipe_id` in this file and
+ * `free_rx_pipes` in enso_chr.c.
+ *
+ * @param pipe pointer to the `rx_pipe_internal` struct representing the pipe.
+ *
+ * @return 0 on success. -1 if the pipe param is NULL.
+ * */
 int free_rx_pipe(struct rx_pipe_internal *pipe) {
   struct queue_regs *rep_q_regs;
 
-  if(!pipe->allocated) {
-    return 0;
+  if (!pipe->allocated) {
+    return -1;
   }
 
   rep_q_regs = pipe->regs;
@@ -1348,9 +1468,20 @@ int free_rx_pipe(struct rx_pipe_internal *pipe) {
   return 0;
 }
 
+/**
+ * @brief Goes through the Rx notification buffer and checks for available
+ * notifications from the NIC. If available, it updates `pending_rx_pipe_tails`
+ * which stores the new tail indexed by `pipe_id` and `next_rx_pipe_ids` which
+ * stores the available pipe IDs in a buffer.
+ *
+ * @param notif_buf_pair the notification buffer whose Rx notification buffer
+ * needs to be checked.
+ *
+ * @return the number of consumed notifications from the Rx notification buffer.
+ * */
 static uint16_t get_new_tails(struct notification_buf_pair *notif_buf_pair) {
-  struct rx_notification* rx_notif;
-  struct rx_notification* curr_notif;
+  struct rx_notification *rx_notif;
+  struct rx_notification *curr_notif;
   uint32_t notification_buf_head;
   uint16_t next_rx_ids_tail;
   uint16_t nb_consumed_notifications = 0;
@@ -1361,7 +1492,7 @@ static uint16_t get_new_tails(struct notification_buf_pair *notif_buf_pair) {
   notification_buf_head = notif_buf_pair->rx_head;
   next_rx_ids_tail = notif_buf_pair->next_rx_ids_tail;
 
-  for (;ind < BATCH_SIZE; ++ind) {
+  for (; ind < BATCH_SIZE; ++ind) {
     curr_notif = rx_notif + notification_buf_head;
 
     // Check if the next notification was updated by the NIC.
@@ -1369,8 +1500,8 @@ static uint16_t get_new_tails(struct notification_buf_pair *notif_buf_pair) {
       break;
     }
 
+    // mark as consumed
     curr_notif->signal = 0;
-    notification_buf_head = (notification_buf_head + 1) % NOTIFICATION_BUF_SIZE;
 
     enso_pipe_id = curr_notif->queue_id;
     notif_buf_pair->pending_rx_pipe_tails[enso_pipe_id] =
@@ -1380,6 +1511,7 @@ static uint16_t get_new_tails(struct notification_buf_pair *notif_buf_pair) {
     next_rx_ids_tail = (next_rx_ids_tail + 1) % NOTIFICATION_BUF_SIZE;
 
     ++nb_consumed_notifications;
+    notification_buf_head = (notification_buf_head + 1) % NOTIFICATION_BUF_SIZE;
   }
 
   notif_buf_pair->next_rx_ids_tail = next_rx_ids_tail;
@@ -1393,6 +1525,19 @@ static uint16_t get_new_tails(struct notification_buf_pair *notif_buf_pair) {
   return nb_consumed_notifications;
 }
 
+/**
+ * @brief Takes the new tail from `pending_rx_pipe_tails` and adds it to
+ * `new_rx_tail` argument. Used by `consume_rx_pipe` and `get_next_batch`
+ * functions to fetch the latest tail for a corresponding pipe id.
+ *
+ * @param notif_buf_pair notification buffer pair whose `pending_rx_pipe_tails`
+ * needs to be accessed.
+ * @param pipe Rx pipe whose tail needs to be fetched.
+ * @param new_rx_tail pointer to the new tail variable.
+ *
+ * @return 0 if not new tail is available. Otherwise, return the size of the
+ * avaialble data aligned to the flit size.
+ * */
 static uint32_t consume_queue(struct notification_buf_pair *notif_buf_pair,
                               struct rx_pipe_internal *pipe,
                               uint32_t *new_rx_tail) {
@@ -1402,22 +1547,33 @@ static uint32_t consume_queue(struct notification_buf_pair *notif_buf_pair,
   uint32_t enso_pipe_new_tail;
 
   enso_pipe_head = pipe->rx_tail;
-  enso_pipe_id = pipe->id; // get the pipe id from the userspace
+  enso_pipe_id = pipe->id;
+  // `pending_rx_pipe_tails` is filled in `get_new_tails`
   enso_pipe_new_tail = notif_buf_pair->pending_rx_pipe_tails[enso_pipe_id];
-  if(enso_pipe_new_tail == enso_pipe_head) {
-      return 0;
+  if (enso_pipe_new_tail == enso_pipe_head) {
+    return 0;
   }
-  flit_aligned_size = ((enso_pipe_new_tail - enso_pipe_head)
-                                % ENSO_PIPE_SIZE) * 64;
-  // we update the rx tail in the kernel
-  enso_pipe_head = (enso_pipe_head + flit_aligned_size / 64)
-                   % ENSO_PIPE_SIZE;
+  flit_aligned_size =
+      ((enso_pipe_new_tail - enso_pipe_head) % ENSO_PIPE_SIZE) * 64;
+  // we update the rx tail in our data structures
+  enso_pipe_head = (enso_pipe_head + flit_aligned_size / 64) % ENSO_PIPE_SIZE;
   pipe->rx_tail = enso_pipe_head;
   // we send this back to the application
   *new_rx_tail = enso_pipe_head;
   return flit_aligned_size;
 }
 
+/**
+ * @brief Returns the ID of an Rx pipe which has new data available. Used by the
+ * `get_next_batch`, `next_rx_pipe_to_recv` and `get_next_rx_pipe` to get a pipe
+ * ID which has a new tail available.
+ *
+ * @param notif_buf_pair notification buffer pair where a new pipe needs to be
+ * searched for.
+ *
+ * @return -1 if no new tails are available, or else the pipe ID which has a new
+ * tail available.
+ * */
 static int32_t get_next_pipe_id(struct notification_buf_pair *notif_buf_pair) {
   uint16_t next_rx_ids_head;
   uint16_t next_rx_ids_tail;
@@ -1437,11 +1593,22 @@ static int32_t get_next_pipe_id(struct notification_buf_pair *notif_buf_pair) {
   enso_pipe_id = notif_buf_pair->next_rx_pipe_ids[next_rx_ids_head];
 
   notif_buf_pair->next_rx_ids_head =
-                 (next_rx_ids_head + 1) % NOTIFICATION_BUF_SIZE;
+      (next_rx_ids_head + 1) % NOTIFICATION_BUF_SIZE;
 
   return enso_pipe_id;
 }
 
+/**
+ * @brief Goes through the `rx_enso_pipes` list and picks a pipe that has a new
+ * tail available. Checks for new tails on a pipe using `get_next_pipe_id`.
+ *
+ * @param notif_buf_pair notification buffer pair where we need to find an Rx
+ * pipe that has data available.
+ * @param rx_enso_pipes list of all Rx enso pipes.
+ *
+ * @return -1 on failure or else the ID of the pipe that has a new tail
+ * available.
+ * */
 static int32_t get_next_rx_pipe(struct notification_buf_pair *notif_buf_pair,
                                 struct rx_pipe_internal **rx_enso_pipes) {
   struct rx_pipe_internal *pipe;
@@ -1450,15 +1617,15 @@ static int32_t get_next_rx_pipe(struct notification_buf_pair *notif_buf_pair,
   uint32_t enso_pipe_tail;
 
   pipe_id = get_next_pipe_id(notif_buf_pair);
-  while(pipe_id >= 0) {
+  while (pipe_id >= 0) {
     pipe = rx_enso_pipes[pipe_id];
-    if(pipe == NULL) {
+    if (pipe == NULL) {
       printk("Pipe ID = %d is NULL\n", pipe_id);
       return -1;
     }
     enso_pipe_head = pipe->rx_tail;
     enso_pipe_tail = notif_buf_pair->pending_rx_pipe_tails[pipe_id];
-    if(enso_pipe_head != enso_pipe_tail) {
+    if (enso_pipe_head != enso_pipe_tail) {
       smp_wmb();
       iowrite32(pipe->rx_head, pipe->buf_head_ptr);
       break;
