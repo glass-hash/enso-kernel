@@ -147,6 +147,10 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
   // Retrieve bookkeeping information.
   chr_dev_bk = filp->private_data;
   dev_bk = chr_dev_bk->dev_bk;
+  if (unlikely(down_interruptible(&dev_bk->sem))) {
+    printk("interrupted while attempting to obtain device semaphore.");
+    return -ERESTARTSYS;
+  }
 
   // Determine access type.
   switch (cmd) {
@@ -215,6 +219,8 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
       retval = -ENOTTY;
   }
 
+  up(&dev_bk->sem);
+
   return retval;
 }
 
@@ -258,14 +264,7 @@ static long set_rr_status(struct dev_bookkeep *dev_bk, bool rr_status) {
   // FIXME(sadok): Right now all this does is to set a variable in the kernel
   // module so that processes can coordinate the current RR status. User space
   // is still responsible for sending the configuration to the NIC.
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
-
   dev_bk->enable_rr = rr_status;
-
-  up(&dev_bk->sem);
 
   return 0;
 }
@@ -305,11 +304,6 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   struct dev_bookkeep *dev_bk;
   dev_bk = chr_dev_bk->dev_bk;
 
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
-
   // Find first available notification buffer. If none are available, return
   // an error.
   for (i = 0; i < MAX_NB_APPS / 8; ++i) {
@@ -329,8 +323,6 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
       break;
     }
   }
-
-  up(&dev_bk->sem);
 
   if (buf_id < 0) {
     printk("couldn't allocate notification buffer.");
@@ -363,11 +355,6 @@ static long free_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
 
   dev_bk = chr_dev_bk->dev_bk;
 
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
-
   // Check that the buffer ID is valid.
   if (buf_id < 0 || buf_id >= MAX_NB_APPS) {
     printk("invalid buffer ID.");
@@ -380,8 +367,6 @@ static long free_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   j = buf_id % 8;
   dev_bk->notif_q_status[i] &= ~(1 << j);
   chr_dev_bk->notif_q_status[i] &= ~(1 << j);
-
-  up(&dev_bk->sem);
 
   return 0;
 }
@@ -404,11 +389,6 @@ static long alloc_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   int32_t pipe_id = -1;
   struct dev_bookkeep *dev_bk;
   dev_bk = chr_dev_bk->dev_bk;
-
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
 
   if (copy_from_user(&is_fallback, user_addr, 1)) {
     printk("couldn't copy is_fallback information from user.");
@@ -433,7 +413,6 @@ static long alloc_pipe(struct chr_dev_bookkeep *chr_dev_bk,
       // Make sure all fallback pipes are contiguously allocated.
       if (pipe_id != dev_bk->nb_fb_queues) {
         printk("fallback pipes are not contiguous.");
-        up(&dev_bk->sem);
         return -EINVAL;
       }
 
@@ -455,8 +434,6 @@ static long alloc_pipe(struct chr_dev_bookkeep *chr_dev_bk,
       }
     }
   }
-
-  up(&dev_bk->sem);
 
   if (pipe_id < 0) {
     printk("couldn't allocate pipe.");
@@ -494,11 +471,6 @@ static long free_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg) {
 
   dev_bk = chr_dev_bk->dev_bk;
 
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
-
   // Check that the pipe ID is valid.
   if (pipe_id < 0 || pipe_id >= MAX_NB_FLOWS) {
     printk("invalid pipe ID.");
@@ -523,8 +495,6 @@ static long free_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg) {
     --(dev_bk->nb_fb_queues);
     --(chr_dev_bk->nb_fb_queues);
   }
-
-  up(&dev_bk->sem);
 
   return 0;
 }
@@ -552,11 +522,6 @@ static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk,
 
   notif_buf_pair = chr_dev_bk->notif_buf_pair;
   dev_bk = chr_dev_bk->dev_bk;
-
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
 
   notif_buf_pair->id = buf_id;
 
@@ -668,8 +633,6 @@ static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk,
   enso_io_write_32((uint32_t)(rx_buf_phys_addr >> 32),
                    &nbp_q_regs->tx_mem_high);
 
-  up(&dev_bk->sem);
-
   return 0;
 }
 
@@ -714,11 +677,6 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     return -EFAULT;
   }
   dev_bk = chr_dev_bk->dev_bk;
-
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
 
   tx_buf = notif_buf_pair->tx_buf;
   tx_tail = notif_buf_pair->tx_tail;
@@ -767,8 +725,6 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   notif_buf_pair->tx_tail = tx_tail;
   enso_io_write_32(tx_tail, notif_buf_pair->tx_tail_ptr);
 
-  up(&dev_bk->sem);
-
   return 0;
 }
 
@@ -791,10 +747,6 @@ static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
 
   notif_buf_pair = chr_dev_bk->notif_buf_pair;
   dev_bk = chr_dev_bk->dev_bk;
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
   if (notif_buf_pair == NULL) {
     printk("Notification buf pair is NULL");
     return -EINVAL;
@@ -808,7 +760,6 @@ static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
     return -EFAULT;
   }
   notif_buf_pair->nb_unreported_completions = 0;  // reset
-  up(&dev_bk->sem);
   return 0;
 }
 
@@ -840,11 +791,6 @@ static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
   }
 
   dev_bk = chr_dev_bk->dev_bk;
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
-
   // Make sure it's a config notification.
   if (config_notification.signal < 2) {
     return -EFAULT;
@@ -874,8 +820,6 @@ static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
   }
   notif_buf_pair->nb_unreported_completions = nb_unreported_completions;
 
-  up(&dev_bk->sem);
-
   return 0;
 }
 
@@ -900,11 +844,6 @@ static long alloc_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   uint64_t rx_buf_phys_addr;
 
   dev_bk = chr_dev_bk->dev_bk;
-
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
 
   if (copy_from_user(&params, (void __user *)uarg, sizeof(params))) {
     printk("couldn't copy arg from user.");
@@ -966,8 +905,6 @@ static long alloc_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   new_enso_rx_pipe->allocated = true;
   rx_pipes[pipe_id] = new_enso_rx_pipe;
 
-  up(&dev_bk->sem);
-
   return 0;
 }
 
@@ -993,14 +930,7 @@ static long free_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
   }
   dev_bk = chr_dev_bk->dev_bk;
 
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
-
   free_rx_pipe(rx_pipes[pipe_id]);
-
-  up(&dev_bk->sem);
 
   return 0;
 }
@@ -1027,15 +957,9 @@ static long consume_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   int32_t pipe_id;
 
   dev_bk = chr_dev_bk->dev_bk;
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
-
   if (copy_from_user(&params, (struct enso_consume_rx_params __user *)uarg,
                      sizeof(struct enso_consume_rx_params))) {
     printk("couldn't copy arg from user.");
-    up(&dev_bk->sem);
     return -EFAULT;
   }
 
@@ -1053,7 +977,6 @@ static long consume_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     if (pipe_id == -1) {
       // no new pipes are available to be fetched from
       // return back to userspace
-      up(&dev_bk->sem);
       return 0;
     }
     params.id = pipe_id;
@@ -1062,7 +985,6 @@ static long consume_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   pipe = rx_pipes[pipe_id];
   if (pipe == NULL) {
     printk("No pipe with ID = %d\n", pipe_id);
-    up(&dev_bk->sem);
     return -EFAULT;
   }
 
@@ -1072,11 +994,8 @@ static long consume_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   if (copy_to_user((struct enso_consume_rx_params __user *)uarg, &params,
                    sizeof(struct enso_consume_rx_params))) {
     printk("couldn't copy head to user.");
-    up(&dev_bk->sem);
     return -EFAULT;
   }
-
-  up(&dev_bk->sem);
 
   return flit_aligned_size;
 }
@@ -1100,11 +1019,6 @@ static long fully_advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   uint32_t enso_pipe_id;
 
   dev_bk = chr_dev_bk->dev_bk;
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
-
   if (copy_from_user(&enso_pipe_id, (void __user *)uarg,
                      sizeof(enso_pipe_id))) {
     printk("couldn't copy arg from user.");
@@ -1120,7 +1034,6 @@ static long fully_advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   enso_io_write_32(pipe->rx_tail, pipe->buf_head_ptr);
   pipe->rx_head = pipe->rx_tail;
 
-  up(&dev_bk->sem);
   return 0;
 }
 
@@ -1148,11 +1061,6 @@ static long advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   uint32_t nb_flits;
 
   dev_bk = chr_dev_bk->dev_bk;
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
-
   if (copy_from_user(&param, (struct enso_advance_pipe_params __user *)uarg,
                      sizeof(struct enso_advance_pipe_params))) {
     printk("couldn't copy arg from user.");
@@ -1175,7 +1083,6 @@ static long advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   enso_io_write_32(rx_pkt_head, pipe->buf_head_ptr);
   pipe->rx_head = rx_pkt_head;
 
-  up(&dev_bk->sem);
   return 0;
 }
 
@@ -1202,11 +1109,6 @@ static long get_next_batch(struct chr_dev_bookkeep *chr_dev_bk,
   int32_t enso_pipe_id;
 
   dev_bk = chr_dev_bk->dev_bk;
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
-
   if (copy_from_user(&params, (struct enso_get_next_batch_params __user *)uarg,
                      sizeof(struct enso_get_next_batch_params))) {
     printk("couldn't copy arg from user.");
@@ -1218,14 +1120,12 @@ static long get_next_batch(struct chr_dev_bookkeep *chr_dev_bk,
   enso_pipe_id = get_next_pipe_id(notif_buf_pair);
   params.pipe_id = enso_pipe_id;
   if (enso_pipe_id == -1) {
-    up(&dev_bk->sem);
     return -EFAULT;
   }
   rx_pipes = chr_dev_bk->rx_pipes;
   pipe = rx_pipes[enso_pipe_id];
   if (pipe == NULL) {
     printk("No pipe with ID = %d\n", enso_pipe_id);
-    up(&dev_bk->sem);
     return -EFAULT;
   }
 
@@ -1234,11 +1134,8 @@ static long get_next_batch(struct chr_dev_bookkeep *chr_dev_bk,
   if (copy_to_user((struct enso_get_next_batch_params __user *)uarg, &params,
                    sizeof(struct enso_get_next_batch_params))) {
     printk("couldn't copy head to user.");
-    up(&dev_bk->sem);
     return -EFAULT;
   }
-
-  up(&dev_bk->sem);
 
   return flit_aligned_size;
 }
@@ -1264,11 +1161,6 @@ static long next_rx_pipe_to_recv(struct chr_dev_bookkeep *chr_dev_bk,
 
   (void)uarg;
   dev_bk = chr_dev_bk->dev_bk;
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
-
   notif_buf_pair = chr_dev_bk->notif_buf_pair;
   rx_enso_pipes = chr_dev_bk->rx_pipes;
 
@@ -1288,7 +1180,6 @@ static long next_rx_pipe_to_recv(struct chr_dev_bookkeep *chr_dev_bk,
     pipe_id = get_next_pipe_id(notif_buf_pair);
   }
 
-  up(&dev_bk->sem);
   return pipe_id;
 }
 
@@ -1310,11 +1201,6 @@ static long prefetch_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   int32_t pipe_id;
 
   dev_bk = chr_dev_bk->dev_bk;
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
-
   if (copy_from_user(&pipe_id, (void __user *)uarg, sizeof(pipe_id))) {
     printk("couldn't copy arg from user.");
     return -EFAULT;
@@ -1331,7 +1217,6 @@ static long prefetch_pipe(struct chr_dev_bookkeep *chr_dev_bk,
 
   enso_io_write_32(pipe->rx_head, pipe->buf_head_ptr);
 
-  up(&dev_bk->sem);
   return pipe_id;
 }
 
