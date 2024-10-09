@@ -83,42 +83,42 @@ class EnsoDev {
   int get_rr_status();
 
   /**
-   * Allocate a notification buffer.
+   * Allocate an ID for a notification buffer.
    * @return Notification buffer ID. On error, -1 is returned and errno is set
    *         appropriately.
    */
-  int allocate_notif_buf();
+  int alloc_notif_buffer_id();
 
   /**
-   * Free a notification buffer.
+   * Free a notification buffer's ID.
    * @param id Notification buffer ID.
    * @return 0 on success. On error, -1 is returned and errno is set
    *         appropriately.
    */
-  int free_notif_buf(int id);
+  int free_notif_buffer_id(int id);
 
   /**
-   * Allocate a pipe.
+   * Allocate an ID for an Rx pipe.
    * @param fallback If true, allocate a fallback pipe. Otherwise, allocate a
    *                 regular pipe.
    * @return Pipe ID. On error, -1 is returned and errno is set appropriately.
    */
-  int allocate_pipe(bool fallback = false);
+  int alloc_rx_pipe_id(bool fallback = false);
 
   /**
-   * Free a pipe.
+   * Free an RxPipe's ID.
    * @param id Pipe ID.
    * @return 0 on success. On error, -1 is returned and errno is set
    *         appropriately.
    */
-  int free_pipe(int id);
+  int free_rx_pipe_id(int id);
 
   /**
    * Allocate a notification buffer pair.
    * @return 0 on success. On error, -1 is returned and errno is set
    *         appropriately.
    */
-  int allocate_notif_buf_pair(int id);
+  int alloc_notif_buffer(int id);
 
   /**
    * Send a TxPipe buffer.
@@ -146,8 +146,10 @@ class EnsoDev {
    *         appropriately.
    */
   int send_config(struct TxNotification *txNotification);
-  int allocate_enso_rx_pipe(int pipe_id, uint64_t buf_phys_addr);
-  int free_enso_rx_pipe(int pipe_id);
+
+  // TODO(kshitij): Add function descriptions for these functions
+  int alloc_rx_pipe(int pipe_id, uint64_t buf_phys_addr);
+  int free_rx_pipe(int pipe_id);
   int consume_rx_pipe(int &pipe_id, uint32_t &krx_tail);
   int full_adv_pipe(int pipe_id);
   int get_next_batch(int notif_id, int &pipe_id, uint32_t &krx_tail);

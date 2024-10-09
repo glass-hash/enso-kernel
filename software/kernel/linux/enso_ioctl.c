@@ -40,16 +40,17 @@ static long get_nb_fallback_queues(struct dev_bookkeep *dev_bk,
                                    unsigned int __user *user_addr);
 static long set_rr_status(struct dev_bookkeep *dev_bk, bool status);
 static long get_rr_status(struct dev_bookkeep *dev_bk, bool __user *user_addr);
-static long alloc_notif_buffer(struct chr_dev_bookkeep *dev_bk,
-                               unsigned int __user *user_addr);
-static long free_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
-                              unsigned long uarg);
-static long alloc_pipe(struct chr_dev_bookkeep *chr_dev_bk,
-                       unsigned int __user *user_addr);
-static long free_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg);
-
-static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk,
+static long alloc_notif_buffer_id(struct chr_dev_bookkeep *dev_bk,
+                                  unsigned int __user *user_addr);
+static long free_notif_buffer_id(struct chr_dev_bookkeep *chr_dev_bk,
                                  unsigned long uarg);
+static long alloc_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
+                             unsigned int __user *user_addr);
+static long free_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
+                            unsigned long uarg);
+
+static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
+                               unsigned long uarg);
 static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                          unsigned long uarg);
 static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
@@ -59,8 +60,8 @@ static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
                         unsigned long uarg);
 static long alloc_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                           unsigned long uarg);
-static long free_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
-                            unsigned long uarg);
+static long free_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
+                         unsigned long uarg);
 static long consume_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                             unsigned long uarg);
 static long fully_advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
@@ -166,20 +167,20 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
     case ENSO_IOCTL_GET_RR_STATUS:
       retval = get_rr_status(dev_bk, (bool __user *)uarg);
       break;
+    case ENSO_IOCTL_ALLOC_NOTIF_BUFFER_ID:
+      retval = alloc_notif_buffer_id(chr_dev_bk, (unsigned int __user *)uarg);
+      break;
+    case ENSO_IOCTL_FREE_NOTIF_BUFFER_ID:
+      retval = free_notif_buffer_id(chr_dev_bk, uarg);
+      break;
+    case ENSO_IOCTL_ALLOC_RX_PIPE_ID:
+      retval = alloc_rx_pipe_id(chr_dev_bk, (unsigned int __user *)uarg);
+      break;
+    case ENSO_IOCTL_FREE_RX_PIPE_ID:
+      retval = free_rx_pipe_id(chr_dev_bk, uarg);
+      break;
     case ENSO_IOCTL_ALLOC_NOTIF_BUFFER:
-      retval = alloc_notif_buffer(chr_dev_bk, (unsigned int __user *)uarg);
-      break;
-    case ENSO_IOCTL_FREE_NOTIF_BUFFER:
-      retval = free_notif_buffer(chr_dev_bk, uarg);
-      break;
-    case ENSO_IOCTL_ALLOC_PIPE:
-      retval = alloc_pipe(chr_dev_bk, (unsigned int __user *)uarg);
-      break;
-    case ENSO_IOCTL_FREE_PIPE:
-      retval = free_pipe(chr_dev_bk, uarg);
-      break;
-    case ENSO_IOCTL_ALLOC_NOTIF_BUF_PAIR:
-      retval = alloc_notif_buf_pair(chr_dev_bk, uarg);
+      retval = alloc_notif_buffer(chr_dev_bk, uarg);
       break;
     case ENSO_IOCTL_SEND_TX_PIPE:
       retval = send_tx_pipe(chr_dev_bk, uarg);
@@ -191,11 +192,11 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
     case ENSO_IOCTL_SEND_CONFIG:
       retval = send_config(chr_dev_bk, uarg);
       break;
-    case ENSO_IOCTL_ALLOC_RX_ENSO_PIPE:
+    case ENSO_IOCTL_ALLOC_RX_PIPE:
       retval = alloc_rx_pipe(chr_dev_bk, uarg);
       break;
-    case ENSO_IOCTL_FREE_RX_ENSO_PIPE:
-      retval = free_rx_pipe_id(chr_dev_bk, uarg);
+    case ENSO_IOCTL_FREE_RX_PIPE:
+      retval = free_rx_pipe(chr_dev_bk, uarg);
       break;
     case ENSO_IOCTL_CONSUME_RX:
       retval = consume_rx_pipe(chr_dev_bk, uarg);
@@ -297,8 +298,8 @@ static long get_rr_status(struct dev_bookkeep *dev_bk, bool __user *user_addr) {
  *
  * @return 0 if successful, negative error code otherwise.
  */
-static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
-                               unsigned int __user *user_addr) {
+static long alloc_notif_buffer_id(struct chr_dev_bookkeep *chr_dev_bk,
+                                  unsigned int __user *user_addr) {
   int i = 0;
   int32_t buf_id = -1;
   struct dev_bookkeep *dev_bk;
@@ -347,8 +348,8 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
  *
  * @return 0 if successful, negative error code otherwise.
  */
-static long free_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
-                              unsigned long uarg) {
+static long free_notif_buffer_id(struct chr_dev_bookkeep *chr_dev_bk,
+                                 unsigned long uarg) {
   int32_t i, j;
   int32_t buf_id = (int32_t)uarg;
   struct dev_bookkeep *dev_bk;
@@ -382,8 +383,8 @@ static long free_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
  *
  * @return 0 if successful, negative error code otherwise.
  */
-static long alloc_pipe(struct chr_dev_bookkeep *chr_dev_bk,
-                       unsigned int __user *user_addr) {
+static long alloc_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
+                             unsigned int __user *user_addr) {
   int32_t i, j;
   bool is_fallback;
   int32_t pipe_id = -1;
@@ -464,7 +465,8 @@ static long alloc_pipe(struct chr_dev_bookkeep *chr_dev_bk,
  *
  * @return 0 if successful, negative error code otherwise.
  */
-static long free_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg) {
+static long free_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
+                            unsigned long uarg) {
   int32_t i, j;
   int32_t pipe_id = (int32_t)uarg;
   struct dev_bookkeep *dev_bk;
@@ -509,8 +511,8 @@ static long free_pipe(struct chr_dev_bookkeep *chr_dev_bk, unsigned long uarg) {
  *
  * @return 0 if successful, negative error code otherwise.
  */
-static long alloc_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk,
-                                 unsigned long uarg) {
+static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
+                               unsigned long uarg) {
   int32_t buf_id = (int32_t)uarg;
   struct dev_bookkeep *dev_bk;
   struct notification_buf_pair *notif_buf_pair;
@@ -917,8 +919,8 @@ static long alloc_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
  *
  * @return 0 if successful, negative error code otherwise.
  */
-static long free_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
-                            unsigned long uarg) {
+static long free_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
+                         unsigned long uarg) {
   struct dev_bookkeep *dev_bk;
   struct rx_pipe_internal **rx_pipes;
   int32_t pipe_id = (int32_t)uarg;
@@ -930,7 +932,7 @@ static long free_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
   }
   dev_bk = chr_dev_bk->dev_bk;
 
-  free_rx_pipe(rx_pipes[pipe_id]);
+  free_rx_pipe_internal(rx_pipes[pipe_id]);
 
   return 0;
 }
@@ -1224,7 +1226,7 @@ static long prefetch_pipe(struct chr_dev_bookkeep *chr_dev_bk,
  * Helper functions
  *****************************************************************************/
 /**
- * @brief Frees the RX/TX notification buffer. Used by `alloc_notif_buf_pair`.
+ * @brief Frees the RX/TX notification buffer. Used by `alloc_notif_buffer`.
  *
  * @param chr_dev_bk Structure containing information about the current
  * character file handle.
@@ -1308,7 +1310,7 @@ void update_tx_head(struct notification_buf_pair *notif_buf_pair) {
  *
  * @return 0 on success. -1 if the pipe param is NULL.
  * */
-int free_rx_pipe(struct rx_pipe_internal *pipe) {
+int free_rx_pipe_internal(struct rx_pipe_internal *pipe) {
   struct queue_regs *rep_q_regs;
 
   if (!pipe->allocated) {

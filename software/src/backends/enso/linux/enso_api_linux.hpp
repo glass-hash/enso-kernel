@@ -77,20 +77,21 @@ struct enso_advance_pipe_params {
   _IOR(ENSO_IOCTL_MAGIC, 1, unsigned int *)
 #define ENSO_IOCTL_SET_RR_STATUS _IOR(ENSO_IOCTL_MAGIC, 2, bool)
 #define ENSO_IOCTL_GET_RR_STATUS _IOR(ENSO_IOCTL_MAGIC, 3, bool *)
-#define ENSO_IOCTL_ALLOC_NOTIF_BUFFER _IOR(ENSO_IOCTL_MAGIC, 4, unsigned int *)
-#define ENSO_IOCTL_FREE_NOTIF_BUFFER _IOR(ENSO_IOCTL_MAGIC, 5, unsigned int)
-#define ENSO_IOCTL_ALLOC_PIPE _IOR(ENSO_IOCTL_MAGIC, 6, unsigned int *)
-#define ENSO_IOCTL_FREE_PIPE _IOR(ENSO_IOCTL_MAGIC, 7, unsigned int)
-#define ENSO_IOCTL_ALLOC_NOTIF_BUF_PAIR _IOR(ENSO_IOCTL_MAGIC, 8, unsigned int)
+#define ENSO_IOCTL_ALLOC_NOTIF_BUFFER_ID \
+  _IOR(ENSO_IOCTL_MAGIC, 4, unsigned int *)
+#define ENSO_IOCTL_FREE_NOTIF_BUFFER_ID _IOR(ENSO_IOCTL_MAGIC, 5, unsigned int)
+#define ENSO_IOCTL_ALLOC_RX_PIPE_ID _IOR(ENSO_IOCTL_MAGIC, 6, unsigned int *)
+#define ENSO_IOCTL_FREE_RX_PIPE_ID _IOR(ENSO_IOCTL_MAGIC, 7, unsigned int)
+#define ENSO_IOCTL_ALLOC_NOTIF_BUFFER _IOR(ENSO_IOCTL_MAGIC, 8, unsigned int)
 #define ENSO_IOCTL_SEND_TX_PIPE \
   _IOR(ENSO_IOCTL_MAGIC, 9, struct enso_send_tx_pipe_params *)
 #define ENSO_IOCTL_GET_UNREPORTED_COMPLETIONS \
   _IOR(ENSO_IOCTL_MAGIC, 10, unsigned int *)
 #define ENSO_IOCTL_SEND_CONFIG \
   _IOR(ENSO_IOCTL_MAGIC, 11, struct tx_notification *)
-#define ENSO_IOCTL_ALLOC_RX_ENSO_PIPE \
+#define ENSO_IOCTL_ALLOC_RX_PIPE \
   _IOR(ENSO_IOCTL_MAGIC, 12, struct enso_pipe_init_params *)
-#define ENSO_IOCTL_FREE_RX_ENSO_PIPE _IOR(ENSO_IOCTL_MAGIC, 13, unsigned int)
+#define ENSO_IOCTL_FREE_RX_PIPE _IOR(ENSO_IOCTL_MAGIC, 13, unsigned int)
 #define ENSO_IOCTL_CONSUME_RX \
   _IOR(ENSO_IOCTL_MAGIC, 14, struct enso_consume_rx_params *)
 #define ENSO_IOCTL_FULL_ADV_PIPE _IOR(ENSO_IOCTL_MAGIC, 15, unsigned int *)

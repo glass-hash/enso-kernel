@@ -105,10 +105,10 @@ int EnsoDev::get_rr_status() {
   return rr_status;
 }
 
-int EnsoDev::allocate_notif_buf() {
+int EnsoDev::alloc_notif_buffer_id() {
   int result;
   unsigned int buf_id;
-  result = ioctl(m_dev_handle, ENSO_IOCTL_ALLOC_NOTIF_BUFFER, &buf_id);
+  result = ioctl(m_dev_handle, ENSO_IOCTL_ALLOC_NOTIF_BUFFER_ID, &buf_id);
 
   if (result != 0) {
     return -1;
@@ -117,14 +117,14 @@ int EnsoDev::allocate_notif_buf() {
   return buf_id;
 }
 
-int EnsoDev::free_notif_buf(int id) {
-  return ioctl(m_dev_handle, ENSO_IOCTL_FREE_NOTIF_BUFFER, id);
+int EnsoDev::free_notif_buffer_id(int id) {
+  return ioctl(m_dev_handle, ENSO_IOCTL_FREE_NOTIF_BUFFER_ID, id);
 }
 
-int EnsoDev::allocate_pipe(bool fallback) {
+int EnsoDev::alloc_rx_pipe_id(bool fallback) {
   int result;
   unsigned int uarg = fallback;
-  result = ioctl(m_dev_handle, ENSO_IOCTL_ALLOC_PIPE, &uarg);
+  result = ioctl(m_dev_handle, ENSO_IOCTL_ALLOC_RX_PIPE_ID, &uarg);
 
   if (result != 0) {
     return -1;
@@ -133,13 +133,13 @@ int EnsoDev::allocate_pipe(bool fallback) {
   return uarg;
 }
 
-int EnsoDev::free_pipe(int id) {
-  return ioctl(m_dev_handle, ENSO_IOCTL_FREE_PIPE, id);
+int EnsoDev::free_rx_pipe_id(int id) {
+  return ioctl(m_dev_handle, ENSO_IOCTL_FREE_RX_PIPE_ID, id);
 }
 
-int EnsoDev::allocate_notif_buf_pair(int id) {
+int EnsoDev::alloc_notif_buffer(int id) {
   int result;
-  result = ioctl(m_dev_handle, ENSO_IOCTL_ALLOC_NOTIF_BUF_PAIR, id);
+  result = ioctl(m_dev_handle, ENSO_IOCTL_ALLOC_NOTIF_BUFFER, id);
 
   if (result != 0) {
     return -1;
@@ -190,12 +190,12 @@ int EnsoDev::send_config(struct TxNotification *txNotification) {
   return result;
 }
 
-int EnsoDev::allocate_enso_rx_pipe(int pipe_id, uint64_t buf_phys_addr) {
+int EnsoDev::alloc_rx_pipe(int pipe_id, uint64_t buf_phys_addr) {
   int result;
   struct enso_pipe_init_params param;
   param.phys_addr = buf_phys_addr;
   param.id = pipe_id;
-  result = ioctl(m_dev_handle, ENSO_IOCTL_ALLOC_RX_ENSO_PIPE, &param);
+  result = ioctl(m_dev_handle, ENSO_IOCTL_ALLOC_RX_PIPE, &param);
 
   if (result != 0) {
     return -1;
@@ -204,9 +204,9 @@ int EnsoDev::allocate_enso_rx_pipe(int pipe_id, uint64_t buf_phys_addr) {
   return result;
 }
 
-int EnsoDev::free_enso_rx_pipe(int pipe_id) {
+int EnsoDev::free_rx_pipe(int pipe_id) {
   int result;
-  result = ioctl(m_dev_handle, ENSO_IOCTL_FREE_RX_ENSO_PIPE, pipe_id);
+  result = ioctl(m_dev_handle, ENSO_IOCTL_FREE_RX_PIPE, pipe_id);
 
   if (result != 0) {
     return -1;
