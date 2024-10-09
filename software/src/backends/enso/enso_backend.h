@@ -104,7 +104,7 @@ class EnsoBackend {
    *
    * @return Notification buffer ID. On error, -1 is returned and errno is set.
    */
-  int AllocateNotifBuf() { return dev_->allocate_notif_buf(); }
+  int AllocNotifBufferID() { return dev_->alloc_notif_buffer_id(); }
 
   /**
    * @brief Frees a notification buffer.
@@ -113,8 +113,8 @@ class EnsoBackend {
    *
    * @return Return 0 on success. On error, -1 is returned and errno is set.
    */
-  int FreeNotifBuf(int notif_buf_id) {
-    return dev_->free_notif_buf(notif_buf_id);
+  int FreeNotifBufferID(int notif_buf_id) {
+    return dev_->free_notif_buffer_id(notif_buf_id);
   }
 
   /**
@@ -124,8 +124,8 @@ class EnsoBackend {
    *                regular pipe.
    * @return Pipe ID. On error, -1 is returned and errno is set.
    */
-  int AllocatePipe(bool fallback = false) {
-    return dev_->allocate_pipe(fallback);
+  int AllocRxPipeID(bool fallback = false) {
+    return dev_->alloc_rx_pipe_id(fallback);
   }
 
   /**
@@ -135,7 +135,7 @@ class EnsoBackend {
    *
    * @return 0 on success. On error, -1 is returned and errno is set.
    */
-  int FreePipe(int pipe_id) { return dev_->free_pipe(pipe_id); }
+  int FreeRxPipeID(int pipe_id) { return dev_->free_rx_pipe_id(pipe_id); }
 
   /**
    * @brief Allocates a notification buffer pair structure.
@@ -144,8 +144,8 @@ class EnsoBackend {
    *
    * @return Return 0 on success. On error, -1 is returned and errno is set.
    */
-  int AllocNotifBufPair(int notif_buf_id) {
-    return dev_->allocate_notif_buf_pair(notif_buf_id);
+  int AllocNotifBuffer(int notif_buf_id) {
+    return dev_->alloc_notif_buffer(notif_buf_id);
   }
 
   /**
@@ -181,11 +181,11 @@ class EnsoBackend {
     return dev_->send_config(txNotification);
   }
 
-  int AllocateEnsoRxPipe(int pipe_id, uint64_t buf_phys_addr) {
-    return dev_->allocate_enso_rx_pipe(pipe_id, buf_phys_addr);
+  int AllocRxPipe(int pipe_id, uint64_t buf_phys_addr) {
+    return dev_->alloc_rx_pipe(pipe_id, buf_phys_addr);
   }
 
-  int FreeEnsoRxPipe(int pipe_id) { return dev_->free_enso_rx_pipe(pipe_id); }
+  int FreeRxPipe(int pipe_id) { return dev_->free_rx_pipe(pipe_id); }
 
   int ConsumeRxPipe(int& pipe_id, uint32_t& krx_tail) {
     return dev_->consume_rx_pipe(pipe_id, krx_tail);

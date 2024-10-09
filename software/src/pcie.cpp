@@ -81,14 +81,14 @@ int notification_buf_init(uint32_t bdf, int32_t bar,
   }
   notification_buf_pair->fpga_dev = enso_dev;
 
-  int notif_pipe_id = enso_dev->AllocateNotifBuf();
+  int notif_pipe_id = enso_dev->AllocNotifBufferID();
 
   if (notif_pipe_id < 0) {
     std::cerr << "Could not allocate notification buffer" << std::endl;
     return -1;
   }
 
-  enso_dev->AllocNotifBufPair(notif_pipe_id);
+  enso_dev->AllocNotifBuffer(notif_pipe_id);
   // this is used later to allocate a huge page for the pipe
   notification_buf_pair->huge_page_prefix = huge_page_prefix;
 
@@ -103,7 +103,7 @@ int enso_pipe_init(struct RxEnsoPipeInternal* enso_pipe,
 
   // we keep the buffer in the userspace and pass the physical address
   // to the kernel
-  int enso_pipe_id = enso_dev->AllocatePipe(fallback);
+  int enso_pipe_id = enso_dev->AllocRxPipeID(fallback);
   if (enso_pipe_id < 0) {
     std::cerr << "Pipe ID allocation failed, err = " << std::strerror(errno)
               << std::endl;
@@ -121,7 +121,7 @@ int enso_pipe_init(struct RxEnsoPipeInternal* enso_pipe,
     return -1;
   }
   uint64_t phys_addr = enso_dev->ConvertVirtAddrToDevAddr(enso_pipe->buf);
-  int ret = enso_dev->AllocateEnsoRxPipe(enso_pipe_id, phys_addr);
+  int ret = enso_dev->AllocRxPipe(enso_pipe_id, phys_addr);
 
   enso_pipe->rx_head = 0;
   enso_pipe->rx_tail = 0;
@@ -239,7 +239,7 @@ void notification_buf_free(struct NotificationBufPair* notification_buf_pair) {
   EnsoBackend* enso_dev =
       static_cast<EnsoBackend*>(notification_buf_pair->fpga_dev);
 
-  enso_dev->FreeNotifBuf(notification_buf_pair->id);
+  enso_dev->FreeNotifBufferID(notification_buf_pair->id);
 
   delete enso_dev;
 }
@@ -251,7 +251,7 @@ void enso_pipe_free(struct NotificationBufPair* notification_buf_pair,
   EnsoBackend* enso_dev =
       static_cast<EnsoBackend*>(notification_buf_pair->fpga_dev);
 
-  enso_dev->FreeEnsoRxPipe(enso_pipe_id);
+  enso_dev->FreeRxPipe(enso_pipe_id);
 
   if (enso_pipe->buf) {
     munmap(enso_pipe->buf, kBufPageSize);
@@ -262,7 +262,7 @@ void enso_pipe_free(struct NotificationBufPair* notification_buf_pair,
     enso_pipe->buf = nullptr;
   }
 
-  enso_dev->FreePipe(enso_pipe_id);
+  enso_dev->FreeRxPipeID(enso_pipe_id);
 
   update_fallback_queues_config(notification_buf_pair);
 }

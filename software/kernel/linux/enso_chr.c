@@ -322,7 +322,7 @@ void free_rx_pipes(struct chr_dev_bookkeep *chr_dev_bk) {
   }
   for (; ind < MAX_NB_FLOWS; ind++) {
     if (pipes[ind]) {
-      free_rx_pipe(pipes[ind]);
+      free_rx_pipe_internal(pipes[ind]);
       kfree(pipes[ind]);
       pipes[ind] = NULL;
     }
