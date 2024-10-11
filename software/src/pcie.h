@@ -73,19 +73,9 @@ int notification_buf_init(uint32_t bdf, int32_t bar,
  *
  * @return Pipe ID on success, -1 on failure.
  */
-int enso_pipe_init(struct RxEnsoPipeInternal* enso_pipe,
-                   struct NotificationBufPair* notification_buf_pair,
-                   bool fallback);
-
-uint32_t consume_rx_kernel(struct NotificationBufPair* notification_buf_pair,
-                           uint32_t& new_rx_tail, int32_t& pipe_id);
-
-void advance_pipe_kernel(struct NotificationBufPair* notification_buf_pair,
-                         struct RxEnsoPipeInternal* enso_pipe, size_t len);
-
-void fully_advance_pipe_kernel(
-    struct RxEnsoPipeInternal* enso_pipe,
-    struct NotificationBufPair* notification_buf_pair);
+int enso_rx_pipe_init(struct RxEnsoPipeInternal* enso_pipe,
+                      struct NotificationBufPair* notification_buf_pair,
+                      bool fallback);
 
 /**
  * @brief Prefetches a given Enso Pipe.
@@ -202,9 +192,23 @@ void notification_buf_free(struct NotificationBufPair* notification_buf_pair);
  * @param enso_pipe Enso Pipe to free.
  * @param enso_pipe_id Hardware ID of the Enso Pipe to free.
  */
-void enso_pipe_free(struct NotificationBufPair* notification_buf_pair,
-                    struct RxEnsoPipeInternal* enso_pipe,
-                    enso_pipe_id_t enso_pipe_id);
+void enso_rx_pipe_free(struct NotificationBufPair* notification_buf_pair,
+                       struct RxEnsoPipeInternal* enso_pipe,
+                       enso_pipe_id_t enso_pipe_id);
+
+int enso_tx_pipe_init(struct NotificationBufPair* notification_buf_pair);
+void enso_tx_pipe_free(struct NotificationBufPair* notification_buf_pair,
+                       enso_pipe_id_t enso_pipe_id);
+
+uint32_t consume_rx_kernel(struct NotificationBufPair* notification_buf_pair,
+                           uint32_t& new_rx_tail, int32_t& pipe_id);
+
+void advance_pipe_kernel(struct NotificationBufPair* notification_buf_pair,
+                         struct RxEnsoPipeInternal* enso_pipe, size_t len);
+
+void fully_advance_pipe_kernel(
+    struct RxEnsoPipeInternal* enso_pipe,
+    struct NotificationBufPair* notification_buf_pair);
 
 }  // namespace enso
 

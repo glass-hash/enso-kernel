@@ -75,34 +75,51 @@ static __init int enso_init(void) {
   sema_init(&dev_bk->sem, 1);
   dev_bk->chr_open_cnt = 0;
   dev_bk->nb_fb_queues = 0;
+  dev_bk->nb_tx_pipes = 0;
   dev_bk->enable_rr = false;
   dev_bk->notif_q_status = kzalloc(MAX_NB_APPS / 8, GFP_KERNEL);
   if (dev_bk->notif_q_status == NULL) {
-    printk("couldn't create notification queue status");
-    kfree(dev_bk);
-    return -ENOMEM;
+    printk("couldn't create notification queue status\n");
+    goto failed_notif_q_status_alloc;
   }
 
-  dev_bk->pipe_status = kzalloc(MAX_NB_FLOWS / 8, GFP_KERNEL);
-  if (dev_bk->pipe_status == NULL) {
-    printk("couldn't create pipe status for device ");
-    kfree(dev_bk);
-    kfree(dev_bk->notif_q_status);
-    return -ENOMEM;
+  dev_bk->rx_pipe_id_status = kzalloc(MAX_NB_FLOWS / 8, GFP_KERNEL);
+  if (dev_bk->rx_pipe_id_status == NULL) {
+    printk("couldn't create pipe status for device\n");
+    goto failed_rx_pipe_id_status_alloc;
   }
+
+  dev_bk->tx_pipe_id_status = kzalloc(MAX_NB_FLOWS / 8, GFP_KERNEL);
+  if (dev_bk->tx_pipe_id_status == NULL) {
+    printk("couldn't create pipe status for device\n");
+    goto failed_tx_pipe_id_status_alloc;
+  }
+
   global_bk.dev_bk = dev_bk;
+
   return 0;
+
+failed_tx_pipe_id_status_alloc:
+  kfree(dev_bk->rx_pipe_id_status);
+failed_rx_pipe_id_status_alloc:
+  kfree(dev_bk->notif_q_status);
+failed_notif_q_status_alloc:
+  kfree(dev_bk);
+  return -ENOMEM;
 }
 module_init(enso_init);
 
 /**
- * enso_init(void): Unregisters the Enso driver.
- *
+ * @brief: Unregisters the Enso driver.
  * */
 static void enso_exit(void) {
-  // unregister the character device
+  // all other clean up
   enso_chr_exit();
   global_bk.intel_enso = NULL;
+  kfree(global_bk.dev_bk->tx_pipe_id_status);
+  kfree(global_bk.dev_bk->rx_pipe_id_status);
+  kfree(global_bk.dev_bk->notif_q_status);
+  kfree(global_bk.dev_bk);
 }
 module_exit(enso_exit);
 

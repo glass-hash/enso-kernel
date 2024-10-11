@@ -105,15 +105,20 @@ struct enso_global_bookkeep {
  * @var enable_rr     Enable round-robin scheduling among fallback queues.
  * @var notif_q_status Bit vector to keep track of which notification queue has
  *                  been allocated.
- * @var pipe_status   Bit vector to keep track of which pipe has been allocated.
+ * @var rx_pipe_id_status   Bit vector to keep track of which Rx Pipe ID has
+ * been allocated.
+ * @var tx_pipe_id_status   Bit vector to keep track of which Tx Pipe ID has
+ * been allocated.
  */
 struct dev_bookkeep {
-  int chr_open_cnt;
   struct semaphore sem;
-  uint32_t nb_fb_queues;
-  bool enable_rr;
   uint8_t *notif_q_status;
-  uint8_t *pipe_status;
+  uint8_t *rx_pipe_id_status;
+  uint8_t *tx_pipe_id_status;
+  uint32_t chr_open_cnt;
+  uint32_t nb_fb_queues;
+  uint32_t nb_tx_pipes;
+  bool enable_rr;
 };
 
 /**
@@ -135,7 +140,8 @@ struct chr_dev_bookkeep {
   struct dev_bookkeep *dev_bk;
   uint32_t nb_fb_queues;
   uint8_t *notif_q_status;
-  uint8_t *pipe_status;
+  uint8_t *rx_pipe_id_status;
+  uint8_t *tx_pipe_id_status;
   struct notification_buf_pair *notif_buf_pair;
   struct rx_pipe_internal **rx_pipes;
 };

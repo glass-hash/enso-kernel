@@ -68,7 +68,9 @@ class EnsoBackend {
    * @brief Converts an address in the application's virtual address space to an
    *        address that can be used by the device (typically the physical
    *        address).
+   *
    * @param virt_addr Address in the application's virtual address space.
+   *
    * @return Address that can be used by the device.
    */
   uint64_t ConvertVirtAddrToDevAddr(void* virt_addr) {
@@ -77,6 +79,7 @@ class EnsoBackend {
 
   /**
    * @brief Retrieves the number of fallback queues currently in use.
+   *
    * @return The number of fallback queues currently in use. On error, -1 is
    *         returned and errno is set appropriately.
    */
@@ -100,14 +103,14 @@ class EnsoBackend {
   int GetRrStatus() { return dev_->get_rr_status(); }
 
   /**
-   * @brief Allocates a notification buffer.
+   * @brief Allocates an ID for a notification buffer.
    *
    * @return Notification buffer ID. On error, -1 is returned and errno is set.
    */
   int AllocNotifBufferID() { return dev_->alloc_notif_buffer_id(); }
 
   /**
-   * @brief Frees a notification buffer.
+   * @brief Frees a notification buffer's ID.
    *
    * @param notif_buf_id Notification buffer ID.
    *
@@ -118,7 +121,7 @@ class EnsoBackend {
   }
 
   /**
-   * @brief Allocates a pipe.
+   * @brief Allocates an ID for an RxPipe.
    *
    * @param fallback If true, allocates a fallback pipe. Otherwise, allocates a
    *                regular pipe.
@@ -129,7 +132,7 @@ class EnsoBackend {
   }
 
   /**
-   * @brief Frees a pipe.
+   * @brief Frees an ID belonging to an RxPipe.
    *
    * @param pipe_id Pipe ID to be freed.
    *
@@ -181,29 +184,109 @@ class EnsoBackend {
     return dev_->send_config(txNotification);
   }
 
+  /**
+   * @brief Allocates an RxPipe in the kernel.
+   *
+   * @param pipe_id ID belonging to the RxPipe.
+   * @param buf_phys_addr Physical address of the RxPipe's buffer.
+   *
+   * @return Return 0 on success. On error, -1 is returned and errno is set.
+   */
   int AllocRxPipe(int pipe_id, uint64_t buf_phys_addr) {
     return dev_->alloc_rx_pipe(pipe_id, buf_phys_addr);
   }
 
+  /**
+   * @brief Frees an RxPipe in the kernel.
+   *
+   * @param pipe_id ID belonging to the RxPipe.
+   *
+   * @return Return 0 on success. On error, -1 is returned and errno is set.
+   */
   int FreeRxPipe(int pipe_id) { return dev_->free_rx_pipe(pipe_id); }
 
+  /**
+   * @brief Gets a new tail (if available) for an RxPipe.
+   *
+   * @param pipe_id ID of to the RxPipe that needs to be checked for new data.
+   * @param krx_tail New tail offset in the RxPipe's buffer.
+   *
+   * @return Return 0 on success. On error, -1 is returned and errno is set.
+   */
   int ConsumeRxPipe(int& pipe_id, uint32_t& krx_tail) {
     return dev_->consume_rx_pipe(pipe_id, krx_tail);
   }
 
+  /**
+   * @brief Fully advances the head of an RxPipe.
+   *
+   * @param pipe_id ID of the RxPipe whose head needs to be advanced.
+   *
+   * @return Return 0 on success. On error, -1 is returned and errno is set.
+   */
   int FullyAdvancePipe(int pipe_id) { return dev_->full_adv_pipe(pipe_id); }
 
+  /**
+   * @brief Gets the next batch of data from an RxPipe.
+   *
+   * @param notif_id ID of the notification buffer.
+   * @param pipe_id ID of the RxPipe whose head needs to be advanced.
+   * @param krx_tail ID of the RxPipe whose head needs to be advanced.
+   *
+   * @return Return 0 on success. On error, -1 is returned and errno is set.
+   * TODO(kshitij): Can we remove this?
+   */
   int GetNextBatch(int notif_id, int& pipe_id, uint32_t& krx_tail) {
     return dev_->get_next_batch(notif_id, pipe_id, krx_tail);
   }
 
+  /**
+   * @brief Advances the head of an RxPipe by `len` number of bytes.
+   *
+   * @param pipe_id ID of the RxPipe whose head needs to be advanced.
+   * @param len Number of bytes the head should be incremented by.
+   *
+   * @return Return 0 on success. On error, -1 is returned and errno is set.
+   */
   int AdvancePipe(int pipe_id, size_t len) {
     return dev_->advance_pipe(pipe_id, len);
   }
 
+  /**
+   * @brief Returns the pipe ID of an RxPipe in this device that has data
+   * available.
+   *
+   * @return Relevant pipe ID on success. On error, -1 is returned and errno is
+   * set.
+   */
   int NextRxPipeToRecv() { return dev_->next_rx_pipe_to_recv(); }
 
+  /**
+   * @brief Prefetches data from an RxPipe.
+   *
+   * @param pipe_id ID of the RxPipe.
+   *
+   * @return Returns the same `pipe_id` on success. On error, -1 is returned and
+   * errno is set.
+   */
   int PrefetchPipe(int pipe_id) { return dev_->prefetch_pipe(pipe_id); }
+
+  /**
+   * @brief Allocates an ID for a TxPipe.
+   *
+   * @return Returns an ID on success. On error, -1 is returned and errno is
+   * set.
+   */
+  int AllocTxPipeID() { return dev_->alloc_tx_pipe_id(); }
+
+  /**
+   * @brief Fully advances the head of an RxPipe.
+   *
+   * @param pipe_id ID of the RxPipe whose head needs to be advanced.
+   *
+   * @return Return 0 on success. On error, -1 is returned and errno is set.
+   */
+  int FreeTxPipeID(int pipe_id) { return dev_->free_tx_pipe_id(pipe_id); }
 
  private:
   EnsoBackend() noexcept {}

@@ -268,4 +268,22 @@ int EnsoDev::prefetch_pipe(int pipe_id) {
   return result;
 }
 
+int EnsoDev::alloc_tx_pipe_id() {
+  int result;
+  uint32_t pipe_id;
+  result = ioctl(m_dev_handle, ENSO_IOCTL_ALLOC_TX_PIPE_ID, &pipe_id);
+
+  if (result != 0) {
+    return -1;
+  }
+
+  return pipe_id;
+}
+
+int EnsoDev::free_tx_pipe_id(int pipe_id) {
+  int result;
+  result = ioctl(m_dev_handle, ENSO_IOCTL_FREE_TX_PIPE_ID, pipe_id);
+  return result;
+}
+
 }  // namespace enso_api

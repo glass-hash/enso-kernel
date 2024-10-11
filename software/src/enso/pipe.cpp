@@ -107,12 +107,12 @@ void RxPipe::Clear() {
 }
 
 RxPipe::~RxPipe() {
-  enso_pipe_free(notification_buf_pair_, &internal_rx_pipe_, id_);
+  enso_rx_pipe_free(notification_buf_pair_, &internal_rx_pipe_, id_);
 }
 
 int RxPipe::Init(bool fallback) noexcept {
   int ret =
-      enso_pipe_init(&internal_rx_pipe_, notification_buf_pair_, fallback);
+      enso_rx_pipe_init(&internal_rx_pipe_, notification_buf_pair_, fallback);
   if (ret < 0) {
     return ret;
   }
@@ -128,6 +128,7 @@ TxPipe::~TxPipe() {
     std::string path = GetHugePageFilePath();
     unlink(path.c_str());
   }
+  device_->FreeTxPipeID(kId);
 }
 
 int TxPipe::Init() noexcept {
@@ -219,6 +220,11 @@ int Device::GetNbFallbackQueues() noexcept {
 }
 
 TxPipe* Device::AllocateTxPipe(uint8_t* buf) noexcept {
+  int id = enso_tx_pipe_init(&notification_buf_pair_);
+  if (id < 0) {
+    return nullptr;
+  }
+
   TxPipe* pipe(new (std::nothrow) TxPipe(tx_pipes_.size(), this, buf));
 
   if (unlikely(!pipe)) {
@@ -399,6 +405,10 @@ int Device::GetRoundRobinStatus() noexcept {
 
 int Device::DisableRoundRobin() {
   return disable_round_robin(&notification_buf_pair_);
+}
+
+void Device::FreeTxPipeID(uint32_t pipe_id) {
+  enso_tx_pipe_free(&notification_buf_pair_, pipe_id);
 }
 
 }  // namespace enso

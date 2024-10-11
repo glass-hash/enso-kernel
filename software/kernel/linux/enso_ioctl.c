@@ -74,6 +74,10 @@ static long next_rx_pipe_to_recv(struct chr_dev_bookkeep *chr_dev_bk,
                                  unsigned long uarg);
 static long prefetch_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                           unsigned long uarg);
+static long alloc_tx_pipe_id(struct chr_dev_bookkeep *dev_bk,
+                             int __user *user_addr);
+static long free_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
+                            unsigned long uarg);
 
 /* Helpers */
 static void free_rx_tx_buf(struct chr_dev_bookkeep *chr_dev_bk);
@@ -215,6 +219,12 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
       break;
     case ENSO_IOCTL_PREFETCH_PIPE:
       retval = prefetch_pipe(chr_dev_bk, uarg);
+      break;
+    case ENSO_IOCTL_ALLOC_TX_PIPE_ID:
+      retval = alloc_tx_pipe_id(chr_dev_bk, (int __user *)uarg);
+      break;
+    case ENSO_IOCTL_FREE_TX_PIPE_ID:
+      retval = free_tx_pipe_id(chr_dev_bk, uarg);
       break;
     default:
       retval = -ENOTTY;
@@ -399,7 +409,7 @@ static long alloc_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
   if (is_fallback) {  // Fallback pipes are allocated at the front.
     for (i = 0; i < MAX_NB_FLOWS / 8; ++i) {
       int32_t set_pipe_id = 0;
-      uint8_t set = dev_bk->pipe_status[i];
+      uint8_t set = dev_bk->rx_pipe_id_status[i];
       while (set & 0x1) {
         ++set_pipe_id;
         set >>= 1;
@@ -424,7 +434,7 @@ static long alloc_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
   } else {  // Non-fallback pipes are allocated at the back.
     for (i = MAX_NB_FLOWS / 8 - 1; i >= 0; --i) {
       int32_t set_pipe_id = 7;
-      uint8_t set = dev_bk->pipe_status[i];
+      uint8_t set = dev_bk->rx_pipe_id_status[i];
       while (set & 0x80) {
         --set_pipe_id;
         set <<= 1;
@@ -445,8 +455,8 @@ static long alloc_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
   // bitvector.
   i = pipe_id / 8;
   j = pipe_id % 8;
-  dev_bk->pipe_status[i] |= (1 << j);
-  chr_dev_bk->pipe_status[i] |= (1 << j);
+  dev_bk->rx_pipe_id_status[i] |= (1 << j);
+  chr_dev_bk->rx_pipe_id_status[i] |= (1 << j);
 
   if (copy_to_user(user_addr, &pipe_id, sizeof(pipe_id))) {
     printk("couldn't copy buf_id information to user.");
@@ -482,15 +492,15 @@ static long free_rx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
   // Check that the pipe ID is allocated.
   i = pipe_id / 8;
   j = pipe_id % 8;
-  if (!(chr_dev_bk->pipe_status[i] & (1 << j))) {
+  if (!(chr_dev_bk->rx_pipe_id_status[i] & (1 << j))) {
     printk("pipe ID is not allocated for this file handle.");
     return -EINVAL;
   }
 
   // Clear status bit for both the device bitvector and the character device
   // bitvector.
-  dev_bk->pipe_status[i] &= ~(1 << j);
-  chr_dev_bk->pipe_status[i] &= ~(1 << j);
+  dev_bk->rx_pipe_id_status[i] &= ~(1 << j);
+  chr_dev_bk->rx_pipe_id_status[i] &= ~(1 << j);
 
   // Fallback pipes are allocated at the front.
   if (pipe_id < dev_bk->nb_fb_queues) {
@@ -1220,6 +1230,91 @@ static long prefetch_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   enso_io_write_32(pipe->rx_head, pipe->buf_head_ptr);
 
   return pipe_id;
+}
+
+/**
+ * @brief Allocates an ID for a TxPipe.
+ *
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param user_addr Pointer where the ID needs to be copied.
+ *
+ * @return 0 on success. Negative error code on failure.
+ * */
+static long alloc_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
+                             int __user *user_addr) {
+  int i = 0;
+  int32_t pipe_id = -1;
+  struct dev_bookkeep *dev_bk;
+
+  dev_bk = chr_dev_bk->dev_bk;
+  for (i = 0; i < MAX_NB_FLOWS / 8; ++i) {
+    int32_t set_pipe_id = 0;
+    uint8_t set = dev_bk->tx_pipe_id_status[i];
+    while (set & 0x1) {
+      ++set_pipe_id;
+      set >>= 1;
+    }
+    if (set_pipe_id < 8) {
+      // Set status bit for both the device bitvector and the character device
+      // bitvector.
+      dev_bk->tx_pipe_id_status[i] |= (1 << set_pipe_id);
+      chr_dev_bk->tx_pipe_id_status[i] |= (1 << set_pipe_id);
+
+      pipe_id = i * 8 + set_pipe_id;
+      break;
+    }
+  }
+
+  dev_bk->nb_tx_pipes++;
+
+  if (pipe_id < 0) {
+    printk("couldn't allocate notification buffer.");
+    return -ENOMEM;
+  }
+  printk("Allocated TX pipe with id = %d\n", pipe_id);
+
+  if (copy_to_user(user_addr, &pipe_id, sizeof(pipe_id))) {
+    printk("couldn't copy pipe_id information to user.");
+    return -EFAULT;
+  }
+
+  return 0;
+}
+
+/**
+ * @brief Frees a TxPipe's ID.
+ *
+ * @param chr_dev_bk Structure containing information about the current
+ * character file handle.
+ * @param user_addr Contains the pipe ID to be freed.
+ *
+ * @return 0 on success. Negative error code on failure.
+ * */
+static long free_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
+                            unsigned long uarg) {
+  int32_t i, j;
+  int32_t pipe_id = (int32_t)uarg;
+  struct dev_bookkeep *dev_bk;
+
+  dev_bk = chr_dev_bk->dev_bk;
+
+  // Check that the buffer ID is valid.
+  if (pipe_id < 0 || pipe_id >= MAX_NB_FLOWS) {
+    printk("Invalid pipe ID\n");
+    return -EINVAL;
+  }
+
+  // Clear status bit for both the device bitvector and the character device
+  // bitvector.
+  i = pipe_id / 8;
+  j = pipe_id % 8;
+  dev_bk->tx_pipe_id_status[i] &= ~(1 << j);
+  chr_dev_bk->tx_pipe_id_status[i] &= ~(1 << j);
+
+  printk("Freeing TX pipe with id = %d\n", pipe_id);
+  dev_bk->nb_tx_pipes--;
+  return 0;
 }
 
 /******************************************************************************

@@ -95,7 +95,9 @@ struct enso_advance_pipe_params {
   _IOW(ENSO_IOCTL_MAGIC, 17, struct enso_advance_pipe_params *)
 #define ENSO_IOCTL_NEXT_RX_PIPE_RCV _IOR(ENSO_IOCTL_MAGIC, 18, unsigned int)
 #define ENSO_IOCTL_PREFETCH_PIPE _IOW(ENSO_IOCTL_MAGIC, 19, unsigned int *)
-#define ENSO_IOCTL_MAXNR 19
+#define ENSO_IOCTL_ALLOC_TX_PIPE_ID _IOR(ENSO_IOCTL_MAGIC, 20, int *)
+#define ENSO_IOCTL_FREE_TX_PIPE_ID _IOW(ENSO_IOCTL_MAGIC, 21, unsigned int)
+#define ENSO_IOCTL_MAXNR 21
 
 long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
                          unsigned long arg);

@@ -95,9 +95,9 @@ int notification_buf_init(uint32_t bdf, int32_t bar,
   return 0;
 }
 
-int enso_pipe_init(struct RxEnsoPipeInternal* enso_pipe,
-                   struct NotificationBufPair* notification_buf_pair,
-                   bool fallback) {
+int enso_rx_pipe_init(struct RxEnsoPipeInternal* enso_pipe,
+                      struct NotificationBufPair* notification_buf_pair,
+                      bool fallback) {
   EnsoBackend* enso_dev =
       static_cast<EnsoBackend*>(notification_buf_pair->fpga_dev);
 
@@ -244,9 +244,9 @@ void notification_buf_free(struct NotificationBufPair* notification_buf_pair) {
   delete enso_dev;
 }
 
-void enso_pipe_free(struct NotificationBufPair* notification_buf_pair,
-                    struct RxEnsoPipeInternal* enso_pipe,
-                    enso_pipe_id_t enso_pipe_id) {
+void enso_rx_pipe_free(struct NotificationBufPair* notification_buf_pair,
+                       struct RxEnsoPipeInternal* enso_pipe,
+                       enso_pipe_id_t enso_pipe_id) {
   (void)enso_pipe;
   EnsoBackend* enso_dev =
       static_cast<EnsoBackend*>(notification_buf_pair->fpga_dev);
@@ -265,6 +265,25 @@ void enso_pipe_free(struct NotificationBufPair* notification_buf_pair,
   enso_dev->FreeRxPipeID(enso_pipe_id);
 
   update_fallback_queues_config(notification_buf_pair);
+}
+
+int enso_tx_pipe_init(struct NotificationBufPair* notification_buf_pair) {
+  EnsoBackend* enso_dev =
+      static_cast<EnsoBackend*>(notification_buf_pair->fpga_dev);
+  int id = enso_dev->AllocTxPipeID();
+  if (id < 0) {
+    std::cerr << "TxPipeInit failed" << std::endl;
+  }
+  return id;
+}
+
+void enso_tx_pipe_free(struct NotificationBufPair* notification_buf_pair,
+                       enso_pipe_id_t enso_pipe_id) {
+  EnsoBackend* enso_dev =
+      static_cast<EnsoBackend*>(notification_buf_pair->fpga_dev);
+
+  enso_dev->FreeTxPipeID(enso_pipe_id);
+  return;
 }
 
 }  // namespace enso

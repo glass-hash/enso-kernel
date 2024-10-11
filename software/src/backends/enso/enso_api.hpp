@@ -53,6 +53,8 @@ namespace enso_api {
  * This class provides a handle to access an Enso device from
  * the user-space without worrying about kernel interface.
  *
+ * @see enso_backend.h for function documentation.
+ *
  */
 class EnsoDev {
  public:
@@ -61,93 +63,17 @@ class EnsoDev {
   ~EnsoDev(void);
 
   void test();
-  /**
-   * Retrieve the number of fallback queues currently in use.
-   * @return The number of fallback queues currently in use. On error, -1 is
-   *         returned and errno is set appropriately.
-   */
   int get_nb_fallback_queues();
-
-  /**
-   * Set the Round-Robin status.
-   * @param enable_rr If true, enable RR. Otherwise, disable RR.
-   * @return Return 0 on success. On error, -1 is returned and errno is set.
-   */
   int set_rr_status(bool enable_rr);
-
-  /**
-   * Retrieve the Round-Robin status.
-   * @return If the device has RR enabled, return 1. Otherwise, return 0. On
-   *         error, -1 is returned and errno is set appropriately.
-   */
   int get_rr_status();
-
-  /**
-   * Allocate an ID for a notification buffer.
-   * @return Notification buffer ID. On error, -1 is returned and errno is set
-   *         appropriately.
-   */
   int alloc_notif_buffer_id();
-
-  /**
-   * Free a notification buffer's ID.
-   * @param id Notification buffer ID.
-   * @return 0 on success. On error, -1 is returned and errno is set
-   *         appropriately.
-   */
   int free_notif_buffer_id(int id);
-
-  /**
-   * Allocate an ID for an Rx pipe.
-   * @param fallback If true, allocate a fallback pipe. Otherwise, allocate a
-   *                 regular pipe.
-   * @return Pipe ID. On error, -1 is returned and errno is set appropriately.
-   */
   int alloc_rx_pipe_id(bool fallback = false);
-
-  /**
-   * Free an RxPipe's ID.
-   * @param id Pipe ID.
-   * @return 0 on success. On error, -1 is returned and errno is set
-   *         appropriately.
-   */
   int free_rx_pipe_id(int id);
-
-  /**
-   * Allocate a notification buffer pair.
-   * @return 0 on success. On error, -1 is returned and errno is set
-   *         appropriately.
-   */
   int alloc_notif_buffer(int id);
-
-  /**
-   * Send a TxPipe buffer.
-   * @param phys_addr starting address of the buffer.
-   * @param len       size of the buffer in bytes.
-   * @param buf_id    notification buffer id.
-   *
-   * @return 0 on success. On error, -1 is returned and errno is set
-   *         appropriately.
-   */
   int send_tx_pipe(uint64_t phys_addr, uint32_t len, uint32_t buf_id);
-
-  /**
-   * Get the number of Tx notifications that were consumed by the NIC.
-   * @return the number of unreported completions on success.
-   *         On error, -1 is returned and errno is set appropriately.
-   */
   int get_unreported_completions();
-
-  /**
-   * Send a config notification.
-   * @param txNotification struct TxNotification with the configuration.
-   *
-   * @return 0 on success. On error, -1 is returned and errno is set
-   *         appropriately.
-   */
   int send_config(struct TxNotification *txNotification);
-
-  // TODO(kshitij): Add function descriptions for these functions
   int alloc_rx_pipe(int pipe_id, uint64_t buf_phys_addr);
   int free_rx_pipe(int pipe_id);
   int consume_rx_pipe(int &pipe_id, uint32_t &krx_tail);
@@ -156,6 +82,8 @@ class EnsoDev {
   int advance_pipe(int pipe_id, size_t len);
   int next_rx_pipe_to_recv();
   int prefetch_pipe(int pipe_id);
+  int alloc_tx_pipe_id();
+  int free_tx_pipe_id(int pipe_id);
 
  private:
   /**

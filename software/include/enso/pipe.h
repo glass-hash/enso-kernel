@@ -337,9 +337,15 @@ class Device {
    * @param tx_enso_pipe_id The ID of the TxPipe.
    * @param phys_addr The physical address of the buffer region to send.
    * @param nb_bytes The number of bytes to send.
-   * @return The number of bytes sent.
    */
   void Send(uint32_t tx_enso_pipe_id, uint64_t phys_addr, uint32_t nb_bytes);
+
+  /**
+   * @brief Frees a Tx Pipe's ID. Called during destruction of a TxPipe object.
+   *
+   * @param tx_enso_pipe_id The ID of the TxPipe.
+   */
+  void FreeTxPipeID(uint32_t tx_enso_pipe_id);
 
   friend class RxPipe;
   friend class TxPipe;

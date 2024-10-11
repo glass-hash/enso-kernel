@@ -99,10 +99,16 @@ static int enso_chr_open(struct inode *inode, struct file *filp) {
     goto failed_notif_status_alloc;
   }
 
-  chr_dev_bk->pipe_status = kzalloc(MAX_NB_FLOWS / 8, GFP_KERNEL);
-  if (chr_dev_bk->pipe_status == NULL) {
+  chr_dev_bk->rx_pipe_id_status = kzalloc(MAX_NB_FLOWS / 8, GFP_KERNEL);
+  if (chr_dev_bk->rx_pipe_id_status == NULL) {
     printk("couldn't create pipe status for device\n");
-    goto failed_pipe_status_alloc;
+    goto failed_rx_pipe_id_status_alloc;
+  }
+
+  chr_dev_bk->tx_pipe_id_status = kzalloc(MAX_NB_FLOWS / 8, GFP_KERNEL);
+  if (chr_dev_bk->tx_pipe_id_status == NULL) {
+    printk("couldn't create pipe status for device\n");
+    goto failed_tx_pipe_id_status_alloc;
   }
 
   // Increase device open count.
@@ -114,7 +120,9 @@ static int enso_chr_open(struct inode *inode, struct file *filp) {
   up(&dev_bk->sem);
   return 0;
 
-failed_pipe_status_alloc:
+failed_tx_pipe_id_status_alloc:
+  kfree(chr_dev_bk->rx_pipe_id_status);
+failed_rx_pipe_id_status_alloc:
   kfree(chr_dev_bk->notif_q_status);
 failed_notif_status_alloc:
   kfree(chr_dev_bk->rx_pipes);
@@ -122,6 +130,7 @@ failed_rx_pipe_alloc:
   kfree(chr_dev_bk->notif_buf_pair);
 failed_notif_buf_pair_alloc:
   kfree(chr_dev_bk);
+  up(&dev_bk->sem);
   return -ENOMEM;
 }
 
@@ -152,7 +161,10 @@ static int enso_chr_release(struct inode *inode, struct file *filp) {
     dev_bk->notif_q_status[i] &= ~(chr_dev_bk->notif_q_status[i]);
   }
   for (i = 0; i < MAX_NB_FLOWS / 8; ++i) {
-    dev_bk->pipe_status[i] &= ~(chr_dev_bk->pipe_status[i]);
+    dev_bk->rx_pipe_id_status[i] &= ~(chr_dev_bk->rx_pipe_id_status[i]);
+  }
+  for (i = 0; i < MAX_NB_FLOWS / 8; ++i) {
+    dev_bk->tx_pipe_id_status[i] &= ~(chr_dev_bk->tx_pipe_id_status[i]);
   }
 
   dev_bk->nb_fb_queues -= chr_dev_bk->nb_fb_queues;
@@ -163,7 +175,8 @@ static int enso_chr_release(struct inode *inode, struct file *filp) {
   free_notif_buf_pair(chr_dev_bk);
   free_rx_pipes(chr_dev_bk);
   kfree(chr_dev_bk->notif_q_status);
-  kfree(chr_dev_bk->pipe_status);
+  kfree(chr_dev_bk->rx_pipe_id_status);
+  kfree(chr_dev_bk->tx_pipe_id_status);
   kfree(chr_dev_bk);
 
   return 0;
