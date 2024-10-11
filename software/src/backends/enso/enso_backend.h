@@ -227,20 +227,6 @@ class EnsoBackend {
   int FullyAdvancePipe(int pipe_id) { return dev_->full_adv_pipe(pipe_id); }
 
   /**
-   * @brief Gets the next batch of data from an RxPipe.
-   *
-   * @param notif_id ID of the notification buffer.
-   * @param pipe_id ID of the RxPipe whose head needs to be advanced.
-   * @param krx_tail ID of the RxPipe whose head needs to be advanced.
-   *
-   * @return Return 0 on success. On error, -1 is returned and errno is set.
-   * TODO(kshitij): Can we remove this?
-   */
-  int GetNextBatch(int notif_id, int& pipe_id, uint32_t& krx_tail) {
-    return dev_->get_next_batch(notif_id, pipe_id, krx_tail);
-  }
-
-  /**
    * @brief Advances the head of an RxPipe by `len` number of bytes.
    *
    * @param pipe_id ID of the RxPipe whose head needs to be advanced.

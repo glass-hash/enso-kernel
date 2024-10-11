@@ -89,15 +89,13 @@ struct enso_advance_pipe_params {
 #define ENSO_IOCTL_CONSUME_RX \
   _IOWR(ENSO_IOCTL_MAGIC, 14, struct enso_consume_rx_params *)
 #define ENSO_IOCTL_FULL_ADV_PIPE _IOW(ENSO_IOCTL_MAGIC, 15, unsigned int *)
-#define ENSO_IOCTL_GET_NEXT_BATCH \
-  _IOWR(ENSO_IOCTL_MAGIC, 16, struct enso_get_next_batch_params *)
 #define ENSO_IOCTL_ADVANCE_PIPE \
-  _IOW(ENSO_IOCTL_MAGIC, 17, struct enso_advance_pipe_params *)
-#define ENSO_IOCTL_NEXT_RX_PIPE_RCV _IOR(ENSO_IOCTL_MAGIC, 18, unsigned int)
-#define ENSO_IOCTL_PREFETCH_PIPE _IOW(ENSO_IOCTL_MAGIC, 19, unsigned int *)
-#define ENSO_IOCTL_ALLOC_TX_PIPE_ID _IOR(ENSO_IOCTL_MAGIC, 20, int *)
-#define ENSO_IOCTL_FREE_TX_PIPE_ID _IOW(ENSO_IOCTL_MAGIC, 21, unsigned int)
-#define ENSO_IOCTL_MAXNR 21
+  _IOW(ENSO_IOCTL_MAGIC, 16, struct enso_advance_pipe_params *)
+#define ENSO_IOCTL_NEXT_RX_PIPE_RCV _IOR(ENSO_IOCTL_MAGIC, 17, unsigned int)
+#define ENSO_IOCTL_PREFETCH_PIPE _IOW(ENSO_IOCTL_MAGIC, 18, unsigned int *)
+#define ENSO_IOCTL_ALLOC_TX_PIPE_ID _IOR(ENSO_IOCTL_MAGIC, 19, int *)
+#define ENSO_IOCTL_FREE_TX_PIPE_ID _IOW(ENSO_IOCTL_MAGIC, 20, unsigned int)
+#define ENSO_IOCTL_MAXNR 20
 
 long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
                          unsigned long arg);

@@ -66,8 +66,6 @@ static long consume_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                             unsigned long uarg);
 static long fully_advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                                unsigned long uarg);
-static long get_next_batch(struct chr_dev_bookkeep *chr_dev_bk,
-                           unsigned long uarg);
 static long advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                          unsigned long uarg);
 static long next_rx_pipe_to_recv(struct chr_dev_bookkeep *chr_dev_bk,
@@ -207,9 +205,6 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
       break;
     case ENSO_IOCTL_FULL_ADV_PIPE:
       retval = fully_advance_pipe(chr_dev_bk, uarg);
-      break;
-    case ENSO_IOCTL_GET_NEXT_BATCH:
-      retval = get_next_batch(chr_dev_bk, uarg);
       break;
     case ENSO_IOCTL_ADVANCE_PIPE:
       retval = advance_pipe(chr_dev_bk, uarg);
@@ -1099,60 +1094,6 @@ static long advance_pipe(struct chr_dev_bookkeep *chr_dev_bk,
 }
 
 /**
- * @brief Gets the next batch of packets to be received in a pipe.
- *
- * @param chr_dev_bk Structure containing information about the current
- * character file handle.
- * @param uarg struct `enso_get_next_batch_params` that contains the pipe ID.
- * The kernel sets the `rx_tail` property of this structure with the current
- * tail value of the pipe.
- *
- * @return negative integer with error code on failure. number of bytes
- * available in the pipe (flit size aligned).
- * */
-static long get_next_batch(struct chr_dev_bookkeep *chr_dev_bk,
-                           unsigned long uarg) {
-  struct dev_bookkeep *dev_bk;
-  struct notification_buf_pair *notif_buf_pair;
-  struct rx_pipe_internal **rx_pipes;
-  struct rx_pipe_internal *pipe;
-  struct enso_get_next_batch_params params;
-  uint32_t flit_aligned_size = 0;
-  int32_t enso_pipe_id;
-
-  dev_bk = chr_dev_bk->dev_bk;
-  if (copy_from_user(&params, (struct enso_get_next_batch_params __user *)uarg,
-                     sizeof(struct enso_get_next_batch_params))) {
-    printk("couldn't copy arg from user.");
-    return -EFAULT;
-  }
-
-  notif_buf_pair = chr_dev_bk->notif_buf_pair;
-
-  enso_pipe_id = get_next_pipe_id(notif_buf_pair);
-  params.pipe_id = enso_pipe_id;
-  if (enso_pipe_id == -1) {
-    return -EFAULT;
-  }
-  rx_pipes = chr_dev_bk->rx_pipes;
-  pipe = rx_pipes[enso_pipe_id];
-  if (pipe == NULL) {
-    printk("No pipe with ID = %d\n", enso_pipe_id);
-    return -EFAULT;
-  }
-
-  flit_aligned_size = consume_queue(notif_buf_pair, pipe, &params.new_rx_tail);
-
-  if (copy_to_user((struct enso_get_next_batch_params __user *)uarg, &params,
-                   sizeof(struct enso_get_next_batch_params))) {
-    printk("couldn't copy head to user.");
-    return -EFAULT;
-  }
-
-  return flit_aligned_size;
-}
-
-/**
  * @brief Checks for the next pipe ID that can be used to receive packets.
  *
  * @param chr_dev_bk Structure containing information about the current
@@ -1481,8 +1422,8 @@ static uint16_t get_new_tails(struct notification_buf_pair *notif_buf_pair) {
 
 /**
  * @brief Takes the new tail from `pending_rx_pipe_tails` and adds it to
- * `new_rx_tail` argument. Used by `consume_rx_pipe` and `get_next_batch`
- * functions to fetch the latest tail for a corresponding pipe id.
+ * `new_rx_tail` argument. Used by `consume_rx_pipe` functions to fetch the
+ * latest tail for a corresponding pipe id.
  *
  * @param notif_buf_pair notification buffer pair whose `pending_rx_pipe_tails`
  * needs to be accessed.
@@ -1519,8 +1460,8 @@ static uint32_t consume_queue(struct notification_buf_pair *notif_buf_pair,
 
 /**
  * @brief Returns the ID of an Rx pipe which has new data available. Used by the
- * `get_next_batch`, `next_rx_pipe_to_recv` and `get_next_rx_pipe` to get a pipe
- * ID which has a new tail available.
+ * `next_rx_pipe_to_recv` and `get_next_rx_pipe` to get a pipe ID which has a
+ * new tail available.
  *
  * @param notif_buf_pair notification buffer pair where a new pipe needs to be
  * searched for.

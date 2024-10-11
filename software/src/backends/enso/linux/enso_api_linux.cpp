@@ -232,21 +232,6 @@ int EnsoDev::full_adv_pipe(int pipe_id) {
   return result;
 }
 
-int EnsoDev::get_next_batch(int notif_id, int &pipe_id, uint32_t &krx_tail) {
-  int result;
-  struct enso_get_next_batch_params param;
-  param.notif_id = notif_id;
-  param.new_rx_tail = 0;
-  param.pipe_id = -1;
-  result = ioctl(m_dev_handle, ENSO_IOCTL_GET_NEXT_BATCH, &param);
-  if (result < 0) {
-    return -1;
-  }
-  krx_tail = param.new_rx_tail;
-  pipe_id = param.pipe_id;
-  return result;
-}
-
 int EnsoDev::advance_pipe(int pipe_id, size_t len) {
   int result;
   struct enso_advance_pipe_params param;
