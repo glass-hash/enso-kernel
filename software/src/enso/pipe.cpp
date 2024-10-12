@@ -225,7 +225,7 @@ TxPipe* Device::AllocateTxPipe(uint8_t* buf) noexcept {
     return nullptr;
   }
 
-  TxPipe* pipe(new (std::nothrow) TxPipe(tx_pipes_.size(), this, buf));
+  TxPipe* pipe(new (std::nothrow) TxPipe(id, this, buf));
 
   if (unlikely(!pipe)) {
     return nullptr;
