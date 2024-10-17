@@ -37,10 +37,12 @@
 #include <linux/cdev.h>
 #include <linux/fs.h>
 #include <linux/kernel.h>
+#include <linux/kthread.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/printk.h>
 #include <linux/slab.h>
+#include <linux/spinlock.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
 
@@ -51,6 +53,7 @@
 #define HUGE_PAGE_SIZE (0x1ULL << 21)
 #define MEM_PER_QUEUE (0x1ULL << 12)
 #define BATCH_SIZE 64
+#define SCHED_CORE_NUM 4
 
 // These determine the maximum number of notification buffers and enso pipes.
 // These macros also exist in hardware and **must be kept in sync**. Update the
@@ -69,6 +72,17 @@
 struct enso_intel_pcie {
   void *__iomem base_addr;
 };
+
+struct enso_send_tx_pipe_params {
+  uint64_t phys_addr;
+  uint32_t len;
+  uint32_t id;
+} __attribute__((packed));
+
+struct tx_send_ring_element {
+  struct enso_send_tx_pipe_params ioctl_params;
+  uint32_t notif_buf_id;
+} __attribute__((packed));
 
 /**
  * @struct enso_global_bookkeep
@@ -119,6 +133,14 @@ struct dev_bookkeep {
   uint32_t nb_fb_queues;
   uint32_t nb_tx_pipes;
   bool enable_rr;
+  struct tx_send_ring_element *tx_send_ring;
+  uint16_t tx_ring_head;
+  uint16_t tx_ring_tail;
+  atomic_t *tx_completions;
+  struct task_struct *enso_sched_thread;
+  bool sched_run;
+  struct notification_buf_pair **notif_buf_pairs;
+  spinlock_t lock;
 };
 
 /**

@@ -35,15 +35,6 @@
 
 #include "enso_setup.h"
 
-/*
- * struct enso_send_tx_pipe_params - Structure used to send a TxPipe.
- * */
-struct enso_send_tx_pipe_params {
-  uint64_t phys_addr;
-  uint32_t len;
-  uint32_t id;
-} __attribute__((packed));
-
 struct enso_pipe_init_params {
   uint64_t phys_addr;
   uint32_t id;
@@ -100,5 +91,6 @@ struct enso_advance_pipe_params {
 long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
                          unsigned long arg);
 int free_rx_pipe_internal(struct rx_pipe_internal *pipe);
+int enso_sched(void *data);
 
 #endif  // SOFTWARE_KERNEL_LINUX_ENSO_IOCTL_H_

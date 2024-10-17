@@ -118,6 +118,7 @@ static int enso_chr_open(struct inode *inode, struct file *filp) {
   }
   ++dev_bk->chr_open_cnt;
   up(&dev_bk->sem);
+
   return 0;
 
 failed_tx_pipe_id_status_alloc:
@@ -172,6 +173,8 @@ static int enso_chr_release(struct inode *inode, struct file *filp) {
   --dev_bk->chr_open_cnt;
   up(&dev_bk->sem);
 
+  // update the notification buffer pair in dev_bk
+  dev_bk->notif_buf_pairs[chr_dev_bk->notif_buf_pair->id] = NULL;
   free_notif_buf_pair(chr_dev_bk);
   free_rx_pipes(chr_dev_bk);
   kfree(chr_dev_bk->notif_q_status);
