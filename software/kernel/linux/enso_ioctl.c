@@ -701,8 +701,6 @@ static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
   struct dev_bookkeep *dev_bk;
   struct notification_buf_pair *notif_buf_pair;
   uint32_t completions;
-  /*uint32_t num_bytes = 0;
-  int32_t pipe_id = (int32_t)uarg;*/
   notif_buf_pair = chr_dev_bk->notif_buf_pair;
   dev_bk = chr_dev_bk->dev_bk;
 
@@ -717,16 +715,6 @@ static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
   }
   notif_buf_pair->nb_unreported_completions = 0;  // reset
   return 0;
-
-  /*if (notif_buf_pair == NULL) {
-    printk("Notification buf pair is NULL");
-    return -EINVAL;
-  }
-
-  num_bytes = atomic_read(&dev_bk->tx_completions[pipe_id]);
-  atomic_sub(num_bytes, &dev_bk->tx_completions[pipe_id]);
-
-  return num_bytes;*/
 }
 
 /**
@@ -1620,10 +1608,7 @@ int enso_sched(void *data) {
       /*while(num_comp == 0) {
         update_tx_head(notif_buf_pair);
         num_comp = notif_buf_pair->nb_unreported_completions;
-      }
-      // add it to the completions
-      atomic_add(batch_size, &dev_bk->tx_completions[pipe_id]);
-      num_comp = 0;*/
+      }*/
     }
     yield();
   }

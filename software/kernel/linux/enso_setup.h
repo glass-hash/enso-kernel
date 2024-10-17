@@ -136,7 +136,6 @@ struct dev_bookkeep {
   struct tx_send_ring_element *tx_send_ring;
   uint16_t tx_ring_head;
   uint16_t tx_ring_tail;
-  atomic_t *tx_completions;
   struct task_struct *enso_sched_thread;
   bool sched_run;
   struct notification_buf_pair **notif_buf_pairs;
