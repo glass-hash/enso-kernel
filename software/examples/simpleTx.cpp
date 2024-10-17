@@ -51,7 +51,7 @@
 #define FPGA_PACKET_OVERHEAD 24
 #define MIN_PACKET_SIZE 64
 #define PCAP_FILE_PATH \
-  "/home/kshitij/dev/enso/scripts/sample_pcaps/2_64_1_2.pcap"
+  "/home/kshitij/dev/enso-kernel/scripts/sample_pcaps/2_64_1_2.pcap"
 
 using enso::Device;
 using enso::TxPipe;
