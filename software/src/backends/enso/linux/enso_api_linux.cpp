@@ -271,4 +271,16 @@ int EnsoDev::free_tx_pipe_id(int pipe_id) {
   return result;
 }
 
+uint32_t EnsoDev::get_pipe_completions(uint32_t pipe_id) {
+  int32_t result;
+  result = ioctl(m_dev_handle, ENSO_IOCTL_GET_PIPE_COMPLETIONS, pipe_id);
+
+  if (result < 0) {
+    std::cout << "get pipe completions failed" << std::endl;
+    return 0;
+  }
+
+  return result;
+}
+
 }  // namespace enso_api

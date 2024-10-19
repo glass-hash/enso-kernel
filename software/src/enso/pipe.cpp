@@ -347,18 +347,6 @@ void Device::Send(uint32_t tx_enso_pipe_id, uint64_t phys_addr,
   // tracker currently used inside send_to_queue.
   send_to_queue(&notification_buf_pair_, phys_addr, nb_bytes);
 
-  uint32_t nb_pending_requests =
-      (tx_pr_tail_ - tx_pr_head_) & kPendingTxRequestsBufMask;
-
-  // This will block until there is enough space to keep at least two requests.
-  // We need space for two requests because the request may be split into two
-  // if the bytes wrap around the end of the buffer.
-  while (unlikely(nb_pending_requests >= (kMaxPendingTxRequests - 2))) {
-    ProcessCompletions();
-    nb_pending_requests =
-        (tx_pr_tail_ - tx_pr_head_) & kPendingTxRequestsBufMask;
-  }
-
   tx_pending_requests_[tx_pr_tail_].pipe_id = tx_enso_pipe_id;
   tx_pending_requests_[tx_pr_tail_].nb_bytes = nb_bytes;
   tx_pr_tail_ = (tx_pr_tail_ + 1) & kPendingTxRequestsBufMask;
@@ -379,6 +367,12 @@ void Device::ProcessCompletions() {
   for (RxTxPipe* pipe : rx_tx_pipes_) {
     pipe->ProcessCompletions();
   }
+}
+
+void Device::GetPipeCompletions(uint32_t tx_pipe_id) {
+  uint32_t nb_bytes = get_pipe_completions(&notification_buf_pair_, tx_pipe_id);
+  TxPipe* pipe = tx_pipes_map_[tx_pipe_id];
+  pipe->NotifyCompletion(nb_bytes);
 }
 
 int Device::EnableTimeStamping(uint8_t offset) {

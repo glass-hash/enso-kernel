@@ -286,4 +286,10 @@ void enso_tx_pipe_free(struct NotificationBufPair* notification_buf_pair,
   return;
 }
 
+uint32_t get_pipe_completions(struct NotificationBufPair* notification_buf_pair,
+                              uint32_t tx_pipe_id) {
+  EnsoBackend* enso_dev = (EnsoBackend*)notification_buf_pair->fpga_dev;
+  return enso_dev->GetPipeCompletions(tx_pipe_id);
+}
+
 }  // namespace enso

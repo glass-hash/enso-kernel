@@ -83,6 +83,7 @@ class EnsoDev {
   int prefetch_pipe(int pipe_id);
   int alloc_tx_pipe_id();
   int free_tx_pipe_id(int pipe_id);
+  uint32_t get_pipe_completions(uint32_t pipe_id);
 
  private:
   /**

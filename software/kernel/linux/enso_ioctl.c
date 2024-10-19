@@ -57,7 +57,6 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                          unsigned long uarg);
 static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
                                        unsigned int __user *user_addr);
-
 static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
                         unsigned long uarg);
 static long alloc_rx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
@@ -78,6 +77,8 @@ static long alloc_tx_pipe_id(struct chr_dev_bookkeep *dev_bk,
                              int __user *user_addr);
 static long free_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
                             unsigned long uarg);
+static long get_pipe_completions(struct chr_dev_bookkeep *chr_dev_bk,
+                                 unsigned long uarg);
 
 /* Helpers */
 static void free_rx_tx_buf(struct chr_dev_bookkeep *chr_dev_bk);
@@ -224,6 +225,9 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
       break;
     case ENSO_IOCTL_FREE_TX_PIPE_ID:
       retval = free_tx_pipe_id(chr_dev_bk, uarg);
+      break;
+    case ENSO_IOCTL_GET_PIPE_COMPLETIONS:
+      retval = get_pipe_completions(chr_dev_bk, uarg);
       break;
     default:
       retval = -ENOTTY;
@@ -715,6 +719,43 @@ static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
   }
   notif_buf_pair->nb_unreported_completions = 0;  // reset
   return 0;
+}
+
+/**
+ * @brief Returns the number of completions (bytes that have been sent by
+ * the NIC successfully) for a certain TxPipe ID. The TxPipe in the user space
+ * calls this function when it can no longer serve the user's allocation
+ * requests and keeps calling it until it has enough free space to serve the
+ * user's request. For the scheduler with synchronous completions, when the
+ * TxPipe calls this function, `tx_completions` should have enough completions
+ * to send to the calling TxPipe. However, if we implement deferred completions
+ * in the scheduler, we may no longer have enough number of completions and may
+ * want to make this function blocking.
+ *
+ * @param chr_dev_bk Structure containing information about the current
+ *              character file handle.
+ * @param uarg  TxPipe ID for which completions need to be processed.
+ *
+ * @return 0 for success, negative error code otherwise.
+ */
+static long get_pipe_completions(struct chr_dev_bookkeep *chr_dev_bk,
+                                 unsigned long uarg) {
+  struct dev_bookkeep *dev_bk;
+  struct notification_buf_pair *notif_buf_pair;
+  uint32_t num_bytes = 0;
+  int32_t pipe_id = (int32_t)uarg;
+
+  notif_buf_pair = chr_dev_bk->notif_buf_pair;
+  dev_bk = chr_dev_bk->dev_bk;
+  if (notif_buf_pair == NULL) {
+    printk("Notification buf pair is NULL");
+    return -EINVAL;
+  }
+
+  num_bytes = atomic_read(&dev_bk->tx_completions[pipe_id]);
+  atomic_sub(num_bytes, &dev_bk->tx_completions[pipe_id]);
+
+  return num_bytes;
 }
 
 /**
@@ -1586,7 +1627,7 @@ int enso_sched(void *data) {
   struct notification_buf_pair *notif_buf_pair = NULL;
   struct tx_send_ring_element cur_batch;
   uint32_t notif_buf_id = 0;
-  // uint32_t num_comp = 0;
+  uint32_t num_comp = 0;
   uint32_t pipe_id = 0;
   uint32_t batch_size = 0;
 
@@ -1605,10 +1646,14 @@ int enso_sched(void *data) {
       // increment head
       dev_bk->tx_ring_head = (dev_bk->tx_ring_head + 1) % NOTIFICATION_BUF_SIZE;
       // wait for the NIC to send it
-      /*while(num_comp == 0) {
+      while (num_comp == 0) {
+        // TODO(kshitij): make this call blocking and get rid of the num_comp
+        // variable
         update_tx_head(notif_buf_pair);
         num_comp = notif_buf_pair->nb_unreported_completions;
-      }*/
+      }
+      // add it to the completions
+      atomic_add(batch_size, &dev_bk->tx_completions[pipe_id]);
     }
     yield();
   }

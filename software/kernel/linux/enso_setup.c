@@ -50,7 +50,7 @@ extern struct enso_intel_pcie* get_intel_fpga_pcie_addr(void);
  *
  * */
 static __init int enso_init(void) {
-  int ret;
+  int ret, ind;
   struct dev_bookkeep* dev_bk;
 
   global_bk.intel_enso = NULL;
@@ -105,6 +105,15 @@ static __init int enso_init(void) {
   dev_bk->tx_ring_head = 0;
   dev_bk->tx_ring_tail = 0;
 
+  dev_bk->tx_completions = kzalloc(MAX_NB_FLOWS * sizeof(atomic_t), GFP_KERNEL);
+  if (dev_bk->tx_completions == NULL) {
+    printk("couldn't create completion atomic buffer\n");
+    goto failed_tx_completions_alloc;
+  }
+  for (ind = 0; ind < MAX_NB_FLOWS; ind++) {
+    atomic_set(&dev_bk->tx_completions[ind], 0);
+  }
+
   dev_bk->notif_buf_pairs =
       kzalloc(MAX_NB_APPS * sizeof(struct notification_buf_pair*), GFP_KERNEL);
   if (dev_bk->notif_buf_pairs == NULL) {
@@ -122,6 +131,8 @@ static __init int enso_init(void) {
   return 0;
 
 failed_notif_buf_pair_alloc:
+  kfree(dev_bk->tx_completions);
+failed_tx_completions_alloc:
   kfree(dev_bk->tx_send_ring);
 failed_tx_send_ring_alloc:
   kfree(dev_bk->tx_pipe_id_status);
@@ -145,6 +156,7 @@ static void enso_exit(void) {
   enso_chr_exit();
   global_bk.intel_enso = NULL;
   kfree(global_bk.dev_bk->notif_buf_pairs);
+  kfree(global_bk.dev_bk->tx_completions);
   kfree(global_bk.dev_bk->tx_send_ring);
   kfree(global_bk.dev_bk->tx_pipe_id_status);
   kfree(global_bk.dev_bk->rx_pipe_id_status);

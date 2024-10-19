@@ -180,6 +180,15 @@ class Device {
   void ProcessCompletions();
 
   /**
+   * @brief Gets the number of bytes successfully sent for a specific TxPipe.
+   * Used when the kernel (with packet scheduling) is responsible for processing
+   * completions.
+   *
+   * @param id ID of the TxPipe to check for completions.
+   */
+  void GetPipeCompletions(uint32_t id);
+
+  /**
    * @brief Enables hardware time stamping.
    *
    * All outgoing packets will receive a timestamp and all incoming packets will
@@ -880,7 +889,7 @@ class TxPipe {
    * @return The new buffer capacity after extending.
    */
   inline uint32_t TryExtendBuf() {
-    device_->ProcessCompletions();
+    device_->GetPipeCompletions(kId);
     return capacity();
   }
 
