@@ -653,7 +653,9 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
 }
 
 /**
- * @brief Send a Tx notification to the NIC.
+ * @brief Send data to the NIC. This function will try to add the request to
+ * the send ring buffer. If fails to do that, it will return a failure and the
+ * calling thread will keep trying.
  *
  * @param chr_dev_bk Structure containing information about the current
  * character file handle.
