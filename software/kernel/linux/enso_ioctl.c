@@ -1652,6 +1652,7 @@ int enso_sched(void *data) {
         update_tx_head(notif_buf_pair);
         num_comp = notif_buf_pair->nb_unreported_completions;
       }
+      notif_buf_pair->nb_unreported_completions = 0;
       // add it to the completions
       atomic_add(batch_size, &dev_bk->tx_completions[pipe_id]);
     }
