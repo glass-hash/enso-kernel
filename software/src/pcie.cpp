@@ -176,16 +176,14 @@ void prefetch_pipe(struct RxEnsoPipeInternal* enso_pipe,
 
 static _enso_always_inline uint32_t
 __send_to_queue(struct NotificationBufPair* notification_buf_pair,
-                uint64_t phys_addr, uint32_t len) {
+                uint64_t phys_addr, uint32_t len, uint32_t tx_pipe_id) {
   EnsoBackend* enso_dev = (EnsoBackend*)notification_buf_pair->fpga_dev;
-  enso_dev->SendTxPipe(phys_addr, len, notification_buf_pair->id);
-
-  return len;
+  return enso_dev->SendTxPipe(phys_addr, len, tx_pipe_id);
 }
 
 uint32_t send_to_queue(struct NotificationBufPair* notification_buf_pair,
-                       uint64_t phys_addr, uint32_t len) {
-  return __send_to_queue(notification_buf_pair, phys_addr, len);
+                       uint64_t phys_addr, uint32_t len, uint32_t tx_pipe_id) {
+  return __send_to_queue(notification_buf_pair, phys_addr, len, tx_pipe_id);
 }
 
 uint32_t get_unreported_completions(

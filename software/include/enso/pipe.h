@@ -379,6 +379,7 @@ class Device {
 
   uint32_t tx_pr_head_ = 0;
   uint32_t tx_pr_tail_ = 0;
+  // TODO(kshitij): Clean this up once the scheduler works
   std::array<TxPendingRequest, kMaxPendingTxRequests + 1> tx_pending_requests_;
   static constexpr uint32_t kPendingTxRequestsBufMask = kMaxPendingTxRequests;
   static_assert((kMaxPendingTxRequests & (kMaxPendingTxRequests + 1)) == 0,

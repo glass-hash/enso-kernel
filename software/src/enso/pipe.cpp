@@ -343,16 +343,15 @@ int Device::ApplyConfig(struct TxNotification* config_notification) {
 
 void Device::Send(uint32_t tx_enso_pipe_id, uint64_t phys_addr,
                   uint32_t nb_bytes) {
-  // TODO(sadok): We might be able to improve performance by avoiding the wrap
-  // tracker currently used inside send_to_queue.
-  send_to_queue(&notification_buf_pair_, phys_addr, nb_bytes);
-
-  tx_pending_requests_[tx_pr_tail_].pipe_id = tx_enso_pipe_id;
-  tx_pending_requests_[tx_pr_tail_].nb_bytes = nb_bytes;
-  tx_pr_tail_ = (tx_pr_tail_ + 1) & kPendingTxRequestsBufMask;
+  // keep sending until successful
+  while (send_to_queue(&notification_buf_pair_, phys_addr, nb_bytes,
+                       tx_enso_pipe_id) != 0) {
+  }
 }
 
 void Device::ProcessCompletions() {
+  // TODO(kshitij): This function needs to be fixed once the scheduler works
+  std::cout << "This log should not come" << std::endl;
   uint32_t tx_completions = get_unreported_completions(&notification_buf_pair_);
   for (uint32_t i = 0; i < tx_completions; ++i) {
     TxPendingRequest tx_req = tx_pending_requests_[tx_pr_head_];

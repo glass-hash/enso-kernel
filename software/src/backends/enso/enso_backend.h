@@ -156,12 +156,12 @@ class EnsoBackend {
    *
    * @param phys_addr   start address of the buffer.
    * @param len         size of the data in bytes.
-   * @param id          notification buffer pair id.
+   * @param id          TxPipe ID.
    *
    * @return Return 0 on success. On error, -1 is returned and errno is set.
    */
-  int SendTxPipe(uint64_t phys_addr, uint32_t len, uint32_t id) {
-    return dev_->send_tx_pipe(phys_addr, len, id);
+  int SendTxPipe(uint64_t phys_addr, uint32_t len, uint32_t tx_pipe_id) {
+    return dev_->send_tx_pipe(phys_addr, len, tx_pipe_id);
   }
 
   /**
