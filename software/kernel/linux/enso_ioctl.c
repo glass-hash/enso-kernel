@@ -1640,9 +1640,7 @@ int enso_sched(void *data) {
       pipe_id = cur_batch.ioctl_params.id;
       batch_size = cur_batch.ioctl_params.len;
       notif_buf_pair = dev_bk->notif_buf_pairs[notif_buf_id];
-      spin_lock(&dev_bk->lock);
       send_batch(notif_buf_pair, &cur_batch.ioctl_params);
-      spin_unlock(&dev_bk->lock);
       // increment head
       dev_bk->tx_ring_head = (dev_bk->tx_ring_head + 1) % NOTIFICATION_BUF_SIZE;
       // wait for the NIC to send it
