@@ -51,9 +51,7 @@
 #define DEFAULT_NB_QUEUES 4
 #define MAX_FLOWS 4096
 
-Server::Server(const ServerConfig& serverConfig) {
-  numFlows = serverConfig.numFlows;
-}
+Server::Server(const ServerConfig& serverConfig) { startServer(serverConfig); }
 
 void Server::runRx(enso::stats_t* stats, std::vector<uint64_t>& pktsPerFlow) {
   // create the device and initialize the RxPipe
@@ -104,9 +102,9 @@ void Server::runRx(enso::stats_t* stats, std::vector<uint64_t>& pktsPerFlow) {
   }
 }
 
-void Server::startServer() {
-  std::cout << "Running in server mode with " << numFlows << " connections"
-            << std::endl;
+void Server::startServer(const ServerConfig& serverConfig) {
+  std::cout << "Running in server mode with " << serverConfig.numFlows
+            << " connections" << std::endl;
 
   std::vector<enso::stats_t> threadStats(1);
   std::vector<uint64_t> pktsPerFlow(MAX_FLOWS);
@@ -114,13 +112,13 @@ void Server::startServer() {
   std::thread rxThread(&Server::runRx, this, &threadStats[0],
                        std::ref(pktsPerFlow));
   enso::set_core_id(rxThread, 0);
-  enso::show_rx_flow_stats(pktsPerFlow, &threadStats[0], numFlows,
+  enso::show_rx_flow_stats(pktsPerFlow, &threadStats[0], serverConfig.numFlows,
                            &ProgramConfig::keepRunning);
 
   rxThread.join();
 
   uint64_t totalPkts = 0;
-  for (int i = 0; i < numFlows; i++) {
+  for (uint16_t i = 0; i < serverConfig.numFlows; i++) {
     std::cout << "Flow " << i << ": " << pktsPerFlow[i] << std::endl;
     totalPkts += pktsPerFlow[i];
   }

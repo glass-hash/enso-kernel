@@ -44,7 +44,7 @@ using enso::TxPipe;
 class Client;
 
 struct ClientConfig {
-  uint16_t numFlows;
+  uint16_t numFlowsPerCore;
   uint16_t numCores;
   std::string pcapPath;
   std::optional<int> count;
@@ -110,11 +110,10 @@ class ProgramConfig {
 
 class Server {
  public:
-  void startServer();
+  void startServer(const ServerConfig& serverConfig);
   explicit Server(const ServerConfig& serverConfig);
 
  private:
-  int numFlows;
   void runRx(enso::stats_t* stats, std::vector<uint64_t>& pkts_per_flow);
 };
 

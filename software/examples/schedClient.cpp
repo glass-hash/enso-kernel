@@ -109,7 +109,8 @@ void Client::runTx(std::vector<enso::tx_stats_t>& stats, uint32_t core_id,
 
 int Client::startClient(const ClientConfig& config) {
   std::cout << "Running in client mode with:\n"
-            << "  Connections: " << config.numFlows << "\n"
+            << "  Connections: " << config.numFlowsPerCore * config.numCores
+            << "\n"
             << "  Cores: " << config.numCores << "\n"
             << "  PCAP path: " << config.pcapPath << "\n";
   if (config.count) {
@@ -138,29 +139,30 @@ int Client::startClient(const ClientConfig& config) {
     return -2;
   }
 
-  if (tx_pipes.size() != (config.numCores * config.numFlows)) {
+  if (tx_pipes.size() != (config.numCores * config.numFlowsPerCore)) {
     std::cerr << "PCAP file does not have the same number of flows"
               << std::endl;
-    std::cerr << config.numFlows * config.numCores << " expected. "
+    std::cerr << config.numFlowsPerCore * config.numCores << " expected. "
               << tx_pipes.size() << " found." << std::endl;
     return -2;
   }
 
   // stats to record the metrics
   std::vector<std::thread> threads;
-  std::vector<enso::tx_stats_t> thread_stats(config.numCores * config.numFlows);
+  std::vector<enso::tx_stats_t> thread_stats(config.numCores *
+                                             config.numFlowsPerCore);
 
-  for (uint16_t flow_id = 0; flow_id < config.numFlows; flow_id++) {
-    threads.emplace_back(&Client::runTx, this, std::ref(thread_stats), flow_id,
-                         std::ref(tx_pipes[flow_id]));
-    if (enso::set_core_id(threads.back(), flow_id)) {
+  for (uint16_t flowId = 0; flowId < config.numFlowsPerCore; flowId++) {
+    threads.emplace_back(&Client::runTx, this, std::ref(thread_stats), flowId,
+                         std::ref(tx_pipes[flowId]));
+    if (enso::set_core_id(threads.back(), flowId)) {
       std::cerr << "Error setting CPU affinity" << std::endl;
       return 6;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
-  show_tx_flow_stats(thread_stats, config.numCores * config.numFlows,
+  show_tx_flow_stats(thread_stats, config.numCores * config.numFlowsPerCore,
                      &ProgramConfig::keepRunning);
 
   for (auto& thread : threads) {

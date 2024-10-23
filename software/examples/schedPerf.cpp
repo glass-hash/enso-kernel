@@ -75,8 +75,8 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
           return false;
         }
         config.mode = Mode::Client;
-        config.clientConfig.numFlows = atoi(optarg);
-        if (config.clientConfig.numFlows <= 0) {
+        config.clientConfig.numFlowsPerCore = atoi(optarg);
+        if (config.clientConfig.numFlowsPerCore <= 0) {
           std::cerr << "Error: Number of connections must be positive"
                     << std::endl;
           return false;
@@ -146,11 +146,12 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
 int main(int argc, char* argv[]) {
   ProgramConfig config;
   if (!ProgramConfig::parseArgs(argc, argv, config)) {
-    std::cerr << "Usage:\n"
-              << "  Server mode: " << argv[0] << " -s <num-flows>\n"
-              << "  Client mode: " << argv[0]
-              << " -c <num-flows> <num-cores> <pcap-path> [--count <value>]"
-              << std::endl;
+    std::cerr
+        << "Usage:\n"
+        << "  Server mode: " << argv[0] << " -s <num-flows>\n"
+        << "  Client mode: " << argv[0]
+        << " -c <num-flows-per-core> <num-cores> <pcap-path> [--count <value>]"
+        << std::endl;
     return 1;
   }
   // init signal handler
