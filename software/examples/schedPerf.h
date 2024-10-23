@@ -60,19 +60,19 @@ struct ServerConfig {
  */
 struct EnsoTxPipe {
   explicit EnsoTxPipe(TxPipe* pipe, uint8_t* _buf)
-      : tx_pipe(pipe),
-        nb_aligned_bytes(0),
-        nb_raw_bytes(0),
-        nb_pkts(0),
+      : txPipe(pipe),
+        numAlignedBytes(0),
+        numRawBytes(0),
+        numPkts(0),
         buf(_buf) {}
   // Enso TxPipe
-  TxPipe* tx_pipe;
+  TxPipe* txPipe;
   // Number of cache aligned bytes in the pipe
-  uint32_t nb_aligned_bytes;
+  uint32_t numAlignedBytes;
   // Number of raw bytes in the pipe
-  uint32_t nb_raw_bytes;
+  uint32_t numRawBytes;
   // Number of packets in the pipe
-  uint32_t nb_pkts;
+  uint32_t numPkts;
   uint8_t* buf;
 };
 

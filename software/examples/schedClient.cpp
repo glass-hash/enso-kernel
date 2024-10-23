@@ -64,15 +64,15 @@ void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
   (void)pktHeader;
   struct PcapHandler* context = (struct PcapHandler*)user;
 
-  const struct ether_header* l2_hdr = (struct ether_header*)pktBytes;
-  if (l2_hdr->ether_type != htons(ETHERTYPE_IP)) {
+  const struct ether_header* l2Header = (struct ether_header*)pktBytes;
+  if (l2Header->ether_type != htons(ETHERTYPE_IP)) {
     std::cerr << "Non-IPv4 packets are not supported" << std::endl;
     exit(1);
   }
 
   uint16_t devId = context->txPipes.size() / context->numFlowsPerCore;
   uint32_t len = enso::get_pkt_len(pktBytes);
-  uint32_t nb_flits = (len - 1) / MIN_PACKET_SIZE + 1;
+  uint32_t numFlits = (len - 1) / MIN_PACKET_SIZE + 1;
   TxPipe* pipe = context->devs[devId]->AllocateTxPipe();
   if (!pipe) {
     std::cerr << "Problem creating TX pipe" << std::endl;
@@ -81,11 +81,11 @@ void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
   uint8_t* buf = (uint8_t*)malloc(TX_BUFFER_MAX_SIZE * sizeof(uint8_t));
   struct EnsoTxPipe etp(pipe, buf);
   memcpy(buf, pktBytes, len);
-  etp.nb_aligned_bytes = nb_flits * MIN_PACKET_SIZE;
-  etp.nb_raw_bytes = len;
-  etp.nb_pkts = 1;
-  context->client->fillPipeWithPackets(buf, etp.nb_aligned_bytes,
-                                       etp.nb_raw_bytes, etp.nb_pkts);
+  etp.numAlignedBytes = numFlits * MIN_PACKET_SIZE;
+  etp.numRawBytes = len;
+  etp.numPkts = 1;
+  context->client->fillPipeWithPackets(buf, etp.numAlignedBytes,
+                                       etp.numRawBytes, etp.numPkts);
   context->txPipes.push_back(etp);
 }
 
@@ -100,15 +100,15 @@ void Client::runTx(std::vector<enso::tx_stats_t>& stats,
     for (uint16_t i = startInd; i < endInd; i++) {
       // send the packets
       uint8_t* pipeBuf =
-          (uint8_t*)pipes[i].tx_pipe->AllocateBuf(TX_BUFFER_MAX_SIZE);
+          (uint8_t*)pipes[i].txPipe->AllocateBuf(TX_BUFFER_MAX_SIZE);
       if (pipeBuf == NULL) {
         continue;
       }
-      memcpy(pipeBuf, pipes[i].buf, pipes[i].nb_aligned_bytes);
-      pipes[i].tx_pipe->SendAndFree(pipes[i].nb_aligned_bytes);
+      memcpy(pipeBuf, pipes[i].buf, pipes[i].numAlignedBytes);
+      pipes[i].txPipe->SendAndFree(pipes[i].numAlignedBytes);
       // update the stats
-      stats[pipes[i].tx_pipe->id()].nb_bytes += pipes[i].nb_raw_bytes;
-      stats[pipes[i].tx_pipe->id()].nb_pkts += pipes[i].nb_pkts;
+      stats[pipes[i].txPipe->id()].nb_bytes += pipes[i].numRawBytes;
+      stats[pipes[i].txPipe->id()].nb_pkts += pipes[i].numPkts;
     }
   }
 }
@@ -158,7 +158,6 @@ int Client::startClient(const ClientConfig& config) {
   }
 
   std::vector<std::thread> threads;
-  // Per flow stats
   std::vector<enso::tx_stats_t> flowStats(config.numCores *
                                           config.numFlowsPerCore);
 
