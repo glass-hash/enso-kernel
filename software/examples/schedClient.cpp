@@ -46,31 +46,31 @@
 
 Client::Client(const ClientConfig& config) { startClient(config); }
 
-void Client::fillPipeWithPackets(uint8_t* pipe_buf, uint32_t& a_bytes,
-                                 uint32_t& r_bytes, uint32_t& pkts) {
-  uint32_t init_buf_length = a_bytes;
-  uint32_t init_good_bytes = r_bytes;
-  uint32_t init_nb_pkts = pkts;
-  while ((a_bytes + init_buf_length) <= TX_BUFFER_MAX_SIZE) {
-    memcpy(pipe_buf + a_bytes, pipe_buf, init_buf_length);
-    a_bytes += init_buf_length;
-    r_bytes += init_good_bytes;
-    pkts += init_nb_pkts;
+void Client::fillPipeWithPackets(uint8_t* pipeBuf, uint32_t& alignedBytes,
+                                 uint32_t& rawBytes, uint32_t& pkts) {
+  uint32_t initBufLength = alignedBytes;
+  uint32_t initGoodBytes = rawBytes;
+  uint32_t initNumPkts = pkts;
+  while ((alignedBytes + initBufLength) <= TX_BUFFER_MAX_SIZE) {
+    memcpy(pipeBuf + alignedBytes, pipeBuf, initBufLength);
+    alignedBytes += initBufLength;
+    rawBytes += initGoodBytes;
+    pkts += initNumPkts;
   }
 }
 
-void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pkt_hdr,
-                            const u_char* pkt_bytes) {
-  (void)pkt_hdr;
+void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
+                            const u_char* pktBytes) {
+  (void)pktHeader;
   struct PcapHandler* context = (struct PcapHandler*)user;
 
-  const struct ether_header* l2_hdr = (struct ether_header*)pkt_bytes;
+  const struct ether_header* l2_hdr = (struct ether_header*)pktBytes;
   if (l2_hdr->ether_type != htons(ETHERTYPE_IP)) {
     std::cerr << "Non-IPv4 packets are not supported" << std::endl;
     exit(1);
   }
 
-  uint32_t len = enso::get_pkt_len(pkt_bytes);
+  uint32_t len = enso::get_pkt_len(pktBytes);
   uint32_t nb_flits = (len - 1) / MIN_PACKET_SIZE + 1;
   TxPipe* pipe = context->dev->AllocateTxPipe();
   if (!pipe) {
@@ -79,7 +79,7 @@ void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pkt_hdr,
   }
   uint8_t* buf = (uint8_t*)malloc(TX_BUFFER_MAX_SIZE * sizeof(uint8_t));
   struct EnsoTxPipe etp(pipe, buf);
-  memcpy(buf, pkt_bytes, len);
+  memcpy(buf, pktBytes, len);
   etp.nb_aligned_bytes = nb_flits * MIN_PACKET_SIZE;
   etp.nb_raw_bytes = len;
   etp.nb_pkts = 1;
@@ -88,18 +88,17 @@ void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pkt_hdr,
   context->txPipes.push_back(etp);
 }
 
-void Client::runTx(std::vector<enso::tx_stats_t>& stats, uint32_t core_id,
+void Client::runTx(std::vector<enso::tx_stats_t>& stats,
                    struct EnsoTxPipe& pipe) {
-  (void)core_id;
   std::this_thread::sleep_for(std::chrono::seconds(1));
   std::cout << "Running on core " << sched_getcpu() << std::endl;
   while (ProgramConfig::keepRunning) {
     // send the packets
-    uint8_t* pipe_buf = (uint8_t*)pipe.tx_pipe->AllocateBuf(TX_BUFFER_MAX_SIZE);
-    if (pipe_buf == NULL) {
+    uint8_t* pipeBuf = (uint8_t*)pipe.tx_pipe->AllocateBuf(TX_BUFFER_MAX_SIZE);
+    if (pipeBuf == NULL) {
       continue;
     }
-    memcpy(pipe_buf, pipe.buf, pipe.nb_aligned_bytes);
+    memcpy(pipeBuf, pipe.buf, pipe.nb_aligned_bytes);
     pipe.tx_pipe->SendAndFree(pipe.nb_aligned_bytes);
     // update the stats
     stats[pipe.tx_pipe->id()].nb_bytes += pipe.nb_raw_bytes;
@@ -130,7 +129,7 @@ int Client::startClient(const ClientConfig& config) {
   }
 
   struct PcapHandler context(dev, pcap, this);
-  std::vector<struct EnsoTxPipe>& tx_pipes = context.txPipes;
+  std::vector<struct EnsoTxPipe>& txPipes = context.txPipes;
 
   if (pcap_loop(context.pcap, 0, Client::pcapPktHandler, (u_char*)&context) <
       0) {
@@ -139,11 +138,11 @@ int Client::startClient(const ClientConfig& config) {
     return -2;
   }
 
-  if (tx_pipes.size() != (config.numCores * config.numFlowsPerCore)) {
+  if (txPipes.size() != (config.numCores * config.numFlowsPerCore)) {
     std::cerr << "PCAP file does not have the same number of flows"
               << std::endl;
     std::cerr << config.numFlowsPerCore * config.numCores << " expected. "
-              << tx_pipes.size() << " found." << std::endl;
+              << txPipes.size() << " found." << std::endl;
     return -2;
   }
 
@@ -153,8 +152,8 @@ int Client::startClient(const ClientConfig& config) {
                                              config.numFlowsPerCore);
 
   for (uint16_t flowId = 0; flowId < config.numFlowsPerCore; flowId++) {
-    threads.emplace_back(&Client::runTx, this, std::ref(thread_stats), flowId,
-                         std::ref(tx_pipes[flowId]));
+    threads.emplace_back(&Client::runTx, this, std::ref(thread_stats),
+                         std::ref(txPipes[flowId]));
     if (enso::set_core_id(threads.back(), flowId)) {
       std::cerr << "Error setting CPU affinity" << std::endl;
       return 6;

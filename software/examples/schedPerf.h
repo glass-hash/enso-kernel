@@ -123,11 +123,10 @@ class Client {
   explicit Client(const ClientConfig& clientConfig);
 
  private:
-  void fillPipeWithPackets(uint8_t* pipe_buf, uint32_t& a_bytes,
-                           uint32_t& r_bytes, uint32_t& pkts);
-  static void pcapPktHandler(u_char* user, const struct pcap_pkthdr* pkt_hdr,
-                             const u_char* pkt_bytes);
-  void runTx(std::vector<enso::tx_stats_t>& stats, uint32_t core_id,
-             struct EnsoTxPipe& pipe);
+  void fillPipeWithPackets(uint8_t* pipeBuf, uint32_t& alignedBytes,
+                           uint32_t& rawBytes, uint32_t& pkts);
+  static void pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
+                             const u_char* pktBytes);
+  void runTx(std::vector<enso::tx_stats_t>& stats, struct EnsoTxPipe& pipe);
 };
 #endif  // SOFTWARE_EXAMPLES_SCHEDPERF_H_
