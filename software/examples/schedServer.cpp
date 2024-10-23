@@ -34,7 +34,6 @@
 #include <pcap/pcap.h>
 
 #include <chrono>
-#include <csignal>
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -51,10 +50,6 @@
 #define MIN_PACKET_SIZE 64
 #define DEFAULT_NB_QUEUES 4
 #define MAX_FLOWS 4096
-
-static volatile bool keepRunning = true;
-
-void int_handler(int signal __attribute__((unused))) { keepRunning = false; }
 
 Server::Server(const ServerConfig& serverConfig) {
   numFlows = serverConfig.numFlows;
@@ -83,7 +78,7 @@ void Server::runRx(enso::stats_t* stats, std::vector<uint64_t>& pktsPerFlow) {
     rxPipes.push_back(rxPipe);
   }
 
-  while (keepRunning) {
+  while (ProgramConfig::keepRunning) {
     uint64_t nb_pkts = 0;
 
     RxPipe* rxPipe = dev->NextRxPipeToRecv();
@@ -112,7 +107,6 @@ void Server::runRx(enso::stats_t* stats, std::vector<uint64_t>& pktsPerFlow) {
 void Server::startServer() {
   std::cout << "Running in server mode with " << numFlows << " connections"
             << std::endl;
-  signal(SIGINT, int_handler);
 
   std::vector<enso::stats_t> threadStats(1);
   std::vector<uint64_t> pktsPerFlow(MAX_FLOWS);
@@ -121,7 +115,7 @@ void Server::startServer() {
                        std::ref(pktsPerFlow));
   enso::set_core_id(rxThread, 0);
   enso::show_rx_flow_stats(pktsPerFlow, &threadStats[0], numFlows,
-                           &keepRunning);
+                           &ProgramConfig::keepRunning);
 
   rxThread.join();
 

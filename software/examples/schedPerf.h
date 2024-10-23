@@ -32,6 +32,7 @@
 #ifndef SOFTWARE_EXAMPLES_SCHEDPERF_H_
 #define SOFTWARE_EXAMPLES_SCHEDPERF_H_
 #include <enso/pipe.h>
+#include <pcap/pcap.h>
 
 #include <thread>
 #include <vector>
@@ -40,15 +41,52 @@ using enso::Device;
 using enso::RxPipe;
 using enso::TxPipe;
 
+class Client;
+
 struct ClientConfig {
-  int numFlows;
-  int numCores;
+  uint16_t numFlows;
+  uint16_t numCores;
   std::string pcapPath;
   std::optional<int> count;
 };
 
 struct ServerConfig {
   int numFlows;
+};
+
+/**
+ * @brief Structure to store an Enso TxPipe object and attributes related
+ * to it.
+ */
+struct EnsoTxPipe {
+  explicit EnsoTxPipe(TxPipe* pipe, uint8_t* _buf)
+      : tx_pipe(pipe),
+        nb_aligned_bytes(0),
+        nb_raw_bytes(0),
+        nb_pkts(0),
+        buf(_buf) {}
+  // Enso TxPipe
+  TxPipe* tx_pipe;
+  // Number of cache aligned bytes in the pipe
+  uint32_t nb_aligned_bytes;
+  // Number of raw bytes in the pipe
+  uint32_t nb_raw_bytes;
+  // Number of packets in the pipe
+  uint32_t nb_pkts;
+  uint8_t* buf;
+};
+
+// structure for libpcap
+struct PcapHandler {
+  PcapHandler(std::unique_ptr<Device>& dev_, pcap_t* pcap_, Client* c_)
+      : dev(dev_), pcap(pcap_), client(c_) {}
+  // Pointer to Enso device
+  std::unique_ptr<Device>& dev;
+  // Pipes to store the packets from the PCAP file
+  std::vector<struct EnsoTxPipe> txPipes;
+  // libpcap object associated with the opened PCAP file
+  pcap_t* pcap;
+  Client* client;
 };
 
 class ProgramConfig {
@@ -60,6 +98,9 @@ class ProgramConfig {
   Mode getMode() const { return mode; }
   const ClientConfig& getClientConfig() const { return clientConfig; }
   const ServerConfig& getServerConfig() const { return serverConfig; }
+
+  static volatile bool keepRunning;
+  static void sigintHandler(int signal);
 
  private:
   Mode mode = Mode::Unknown;
@@ -75,5 +116,19 @@ class Server {
  private:
   int numFlows;
   void runRx(enso::stats_t* stats, std::vector<uint64_t>& pkts_per_flow);
+};
+
+class Client {
+ public:
+  int startClient(const ClientConfig& config);
+  explicit Client(const ClientConfig& clientConfig);
+
+ private:
+  void fillPipeWithPackets(uint8_t* pipe_buf, uint32_t& a_bytes,
+                           uint32_t& r_bytes, uint32_t& pkts);
+  static void pcapPktHandler(u_char* user, const struct pcap_pkthdr* pkt_hdr,
+                             const u_char* pkt_bytes);
+  void runTx(std::vector<enso::tx_stats_t>& stats, uint32_t core_id,
+             struct EnsoTxPipe& pipe);
 };
 #endif  // SOFTWARE_EXAMPLES_SCHEDPERF_H_

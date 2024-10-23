@@ -33,10 +33,17 @@
 
 #include <unistd.h>
 
+#include <csignal>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <string>
+
+volatile bool ProgramConfig::keepRunning = true;
+
+void ProgramConfig::sigintHandler(int signal __attribute__((unused))) {
+  keepRunning = false;
+}
 
 bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
   int opt;
@@ -146,21 +153,15 @@ int main(int argc, char* argv[]) {
               << std::endl;
     return 1;
   }
+  // init signal handler
+  signal(SIGINT, ProgramConfig::sigintHandler);
 
   if (config.getMode() == ProgramConfig::Mode::Server) {
     std::unique_ptr<Server> s =
         std::make_unique<Server>(config.getServerConfig());
-    s->startServer();
   } else {
-    const auto& clientConfig = config.getClientConfig();
-    std::cout << "Running in client mode with:\n"
-              << "  Connections: " << clientConfig.numFlows << "\n"
-              << "  Cores: " << clientConfig.numCores << "\n"
-              << "  PCAP path: " << clientConfig.pcapPath << "\n";
-    if (clientConfig.count) {
-      std::cout << "  Count: " << *clientConfig.count << "\n";
-    }
+    std::unique_ptr<Client> c =
+        std::make_unique<Client>(config.getClientConfig());
   }
-
   return 0;
 }

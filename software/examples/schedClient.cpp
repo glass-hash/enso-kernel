@@ -31,65 +31,23 @@
  */
 
 #include <enso/helpers.h>
-#include <enso/pipe.h>
-#include <pcap/pcap.h>
 
 #include <chrono>
-#include <csignal>
 #include <cstdint>
 #include <iostream>
 #include <memory>
-#include <thread>
 
 #include "example_helpers.h"
+#include "schedPerf.h"
 
 #define TX_BUFFER_MAX_SIZE 131072
 #define INTEL_FPGA_PCIE_BDF "65:00.0"
 #define MIN_PACKET_SIZE 64
 
-using enso::Device;
-using enso::TxPipe;
+Client::Client(const ClientConfig& config) { startClient(config); }
 
-/**
- * @brief Structure to store an Enso TxPipe object and attributes related
- * to it.
- */
-struct EnsoTxPipe {
-  explicit EnsoTxPipe(TxPipe* pipe, uint8_t* _buf)
-      : tx_pipe(pipe),
-        nb_aligned_bytes(0),
-        nb_raw_bytes(0),
-        nb_pkts(0),
-        buf(_buf) {}
-  // Enso TxPipe
-  TxPipe* tx_pipe;
-  // Number of cache aligned bytes in the pipe
-  uint32_t nb_aligned_bytes;
-  // Number of raw bytes in the pipe
-  uint32_t nb_raw_bytes;
-  // Number of packets in the pipe
-  uint32_t nb_pkts;
-  uint8_t* buf;
-};
-
-// structure for libpcap
-struct PcapHandler {
-  PcapHandler(std::unique_ptr<Device>& dev_, pcap_t* pcap_)
-      : dev(dev_), pcap(pcap_) {}
-  // Pointer to Enso device
-  std::unique_ptr<Device>& dev;
-  // Pipes to store the packets from the PCAP file
-  std::vector<struct EnsoTxPipe> txPipes;
-  // libpcap object associated with the opened PCAP file
-  pcap_t* pcap;
-};
-
-static volatile bool keep_running = true;
-
-void int_handler(int signal __attribute__((unused))) { keep_running = false; }
-
-void fill_pipe_with_packets(uint8_t* pipe_buf, uint32_t& a_bytes,
-                            uint32_t& r_bytes, uint32_t& pkts) {
+void Client::fillPipeWithPackets(uint8_t* pipe_buf, uint32_t& a_bytes,
+                                 uint32_t& r_bytes, uint32_t& pkts) {
   uint32_t init_buf_length = a_bytes;
   uint32_t init_good_bytes = r_bytes;
   uint32_t init_nb_pkts = pkts;
@@ -101,8 +59,8 @@ void fill_pipe_with_packets(uint8_t* pipe_buf, uint32_t& a_bytes,
   }
 }
 
-void pcap_pkt_handler(u_char* user, const struct pcap_pkthdr* pkt_hdr,
-                      const u_char* pkt_bytes) {
+void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pkt_hdr,
+                            const u_char* pkt_bytes) {
   (void)pkt_hdr;
   struct PcapHandler* context = (struct PcapHandler*)user;
 
@@ -125,17 +83,17 @@ void pcap_pkt_handler(u_char* user, const struct pcap_pkthdr* pkt_hdr,
   etp.nb_aligned_bytes = nb_flits * MIN_PACKET_SIZE;
   etp.nb_raw_bytes = len;
   etp.nb_pkts = 1;
-  fill_pipe_with_packets(buf, etp.nb_aligned_bytes, etp.nb_raw_bytes,
-                         etp.nb_pkts);
+  context->client->fillPipeWithPackets(buf, etp.nb_aligned_bytes,
+                                       etp.nb_raw_bytes, etp.nb_pkts);
   context->txPipes.push_back(etp);
 }
 
-void run_tx(std::vector<enso::tx_stats_t>& stats, uint32_t core_id,
-            struct EnsoTxPipe& pipe) {
+void Client::runTx(std::vector<enso::tx_stats_t>& stats, uint32_t core_id,
+                   struct EnsoTxPipe& pipe) {
   (void)core_id;
   std::this_thread::sleep_for(std::chrono::seconds(1));
   std::cout << "Running on core " << sched_getcpu() << std::endl;
-  while (keep_running) {
+  while (ProgramConfig::keepRunning) {
     // send the packets
     uint8_t* pipe_buf = (uint8_t*)pipe.tx_pipe->AllocateBuf(TX_BUFFER_MAX_SIZE);
     if (pipe_buf == NULL) {
@@ -146,43 +104,17 @@ void run_tx(std::vector<enso::tx_stats_t>& stats, uint32_t core_id,
     // update the stats
     stats[pipe.tx_pipe->id()].nb_bytes += pipe.nb_raw_bytes;
     stats[pipe.tx_pipe->id()].nb_pkts += pipe.nb_pkts;
-    // keep_running = false;
-    // return;
   }
 }
 
-void parse_args(int argc, const char* argv[],
-                struct parsed_args_t* parsed_args) {
-  if (argc == 4) {
-    parsed_args->nb_cores = atoi(argv[1]);
-    parsed_args->nb_flows = atoi(argv[2]);
-    parsed_args->pcap_filename = argv[3];
-    parsed_args->total_pkts = 0xffffffffffffffff;
-  } else if (argc == 5) {
-    parsed_args->nb_cores = atoi(argv[1]);
-    parsed_args->nb_flows = atoi(argv[2]);
-    parsed_args->pcap_filename = argv[3];
-    parsed_args->total_pkts = strtoull(argv[4], NULL, 10);
-  } else {
-    std::cerr << "Usage: " << argv[0]
-              << " NB_CORES NB_FLOWS PCAP_PATH [OPTIONAL] TOTAL_PKTS"
-              << std::endl;
-    std::cerr << "NB_CORES: Number of cores to use." << std::endl;
-    std::cerr << "NB_FLOWS: Number of Tx flows per core." << std::endl;
-    std::cerr << "PCAP_PATH: Path to the PCAP file." << std::endl;
-    std::cerr << "[OPTIONAL] PKTS_COUNT: Total no. of packets to send."
-              << std::endl;
-    exit(0);
+int Client::startClient(const ClientConfig& config) {
+  std::cout << "Running in client mode with:\n"
+            << "  Connections: " << config.numFlows << "\n"
+            << "  Cores: " << config.numCores << "\n"
+            << "  PCAP path: " << config.pcapPath << "\n";
+  if (config.count) {
+    std::cout << "  Count: " << *config.count << "\n";
   }
-}
-
-int main(int argc, const char* argv[]) {
-  struct parsed_args_t parsed_args;
-  parse_args(argc, argv, &parsed_args);
-
-  // init signal handler
-  signal(SIGINT, int_handler);
-
   std::unique_ptr<Device> dev = Device::Create(INTEL_FPGA_PCIE_BDF);
   if (!dev) {
     std::cerr << "Problem creating device" << std::endl;
@@ -190,36 +122,36 @@ int main(int argc, const char* argv[]) {
   }
 
   char errbuf[PCAP_ERRBUF_SIZE];
-  pcap_t* pcap = pcap_open_offline(parsed_args.pcap_filename.c_str(), errbuf);
+  pcap_t* pcap = pcap_open_offline(config.pcapPath.c_str(), errbuf);
   if (pcap == NULL) {
     std::cerr << "Error loading pcap file (" << errbuf << ")" << std::endl;
     return 2;
   }
 
-  struct PcapHandler context(dev, pcap);
+  struct PcapHandler context(dev, pcap, this);
   std::vector<struct EnsoTxPipe>& tx_pipes = context.txPipes;
 
-  if (pcap_loop(context.pcap, 0, pcap_pkt_handler, (u_char*)&context) < 0) {
+  if (pcap_loop(context.pcap, 0, Client::pcapPktHandler, (u_char*)&context) <
+      0) {
     std::cerr << "Error while reading pcap (" << pcap_geterr(context.pcap)
               << ")" << std::endl;
     return -2;
   }
 
-  if (tx_pipes.size() != (parsed_args.nb_cores * parsed_args.nb_flows)) {
+  if (tx_pipes.size() != (config.numCores * config.numFlows)) {
     std::cerr << "PCAP file does not have the same number of flows"
               << std::endl;
-    std::cerr << parsed_args.nb_flows * parsed_args.nb_cores << " expected. "
+    std::cerr << config.numFlows * config.numCores << " expected. "
               << tx_pipes.size() << " found." << std::endl;
     return -2;
   }
 
   // stats to record the metrics
   std::vector<std::thread> threads;
-  std::vector<enso::tx_stats_t> thread_stats(parsed_args.nb_cores *
-                                             parsed_args.nb_flows);
+  std::vector<enso::tx_stats_t> thread_stats(config.numCores * config.numFlows);
 
-  for (uint32_t flow_id = 0; flow_id < parsed_args.nb_flows; flow_id++) {
-    threads.emplace_back(run_tx, std::ref(thread_stats), flow_id,
+  for (uint16_t flow_id = 0; flow_id < config.numFlows; flow_id++) {
+    threads.emplace_back(&Client::runTx, this, std::ref(thread_stats), flow_id,
                          std::ref(tx_pipes[flow_id]));
     if (enso::set_core_id(threads.back(), flow_id)) {
       std::cerr << "Error setting CPU affinity" << std::endl;
@@ -228,8 +160,8 @@ int main(int argc, const char* argv[]) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
-  show_tx_flow_stats(thread_stats, parsed_args.nb_cores * parsed_args.nb_flows,
-                     &keep_running);
+  show_tx_flow_stats(thread_stats, config.numCores * config.numFlows,
+                     &ProgramConfig::keepRunning);
 
   for (auto& thread : threads) {
     thread.join();
