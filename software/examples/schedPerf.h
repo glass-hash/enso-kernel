@@ -127,6 +127,8 @@ class Client {
                            uint32_t& rawBytes, uint32_t& pkts);
   static void pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
                              const u_char* pktBytes);
-  void runTx(std::vector<enso::tx_stats_t>& stats, struct EnsoTxPipe& pipe);
+  void runTx(std::vector<enso::tx_stats_t>& stats,
+             std::vector<struct EnsoTxPipe>& pipes, uint16_t coreId,
+             uint16_t flowsPerCore);
 };
 #endif  // SOFTWARE_EXAMPLES_SCHEDPERF_H_

@@ -89,20 +89,26 @@ void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
 }
 
 void Client::runTx(std::vector<enso::tx_stats_t>& stats,
-                   struct EnsoTxPipe& pipe) {
+                   std::vector<struct EnsoTxPipe>& pipes, uint16_t coreId,
+                   uint16_t flowsPerCore) {
   std::this_thread::sleep_for(std::chrono::seconds(1));
   std::cout << "Running on core " << sched_getcpu() << std::endl;
+  uint16_t startInd = coreId * flowsPerCore;
+  uint16_t endInd = startInd + flowsPerCore;
   while (ProgramConfig::keepRunning) {
-    // send the packets
-    uint8_t* pipeBuf = (uint8_t*)pipe.tx_pipe->AllocateBuf(TX_BUFFER_MAX_SIZE);
-    if (pipeBuf == NULL) {
-      continue;
+    for (uint16_t i = startInd; i < endInd; i++) {
+      // send the packets
+      uint8_t* pipeBuf =
+          (uint8_t*)pipes[i].tx_pipe->AllocateBuf(TX_BUFFER_MAX_SIZE);
+      if (pipeBuf == NULL) {
+        continue;
+      }
+      memcpy(pipeBuf, pipes[i].buf, pipes[i].nb_aligned_bytes);
+      pipes[i].tx_pipe->SendAndFree(pipes[i].nb_aligned_bytes);
+      // update the stats
+      stats[pipes[i].tx_pipe->id()].nb_bytes += pipes[i].nb_raw_bytes;
+      stats[pipes[i].tx_pipe->id()].nb_pkts += pipes[i].nb_pkts;
     }
-    memcpy(pipeBuf, pipe.buf, pipe.nb_aligned_bytes);
-    pipe.tx_pipe->SendAndFree(pipe.nb_aligned_bytes);
-    // update the stats
-    stats[pipe.tx_pipe->id()].nb_bytes += pipe.nb_raw_bytes;
-    stats[pipe.tx_pipe->id()].nb_pkts += pipe.nb_pkts;
   }
 }
 
@@ -146,22 +152,22 @@ int Client::startClient(const ClientConfig& config) {
     return -2;
   }
 
-  // stats to record the metrics
   std::vector<std::thread> threads;
-  std::vector<enso::tx_stats_t> thread_stats(config.numCores *
-                                             config.numFlowsPerCore);
+  // Per flow stats
+  std::vector<enso::tx_stats_t> flowStats(config.numCores *
+                                          config.numFlowsPerCore);
 
-  for (uint16_t flowId = 0; flowId < config.numFlowsPerCore; flowId++) {
-    threads.emplace_back(&Client::runTx, this, std::ref(thread_stats),
-                         std::ref(txPipes[flowId]));
-    if (enso::set_core_id(threads.back(), flowId)) {
+  for (uint16_t coreId = 0; coreId < config.numCores; coreId++) {
+    threads.emplace_back(&Client::runTx, this, std::ref(flowStats),
+                         std::ref(txPipes), coreId, config.numFlowsPerCore);
+    if (enso::set_core_id(threads.back(), coreId)) {
       std::cerr << "Error setting CPU affinity" << std::endl;
       return 6;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
-  show_tx_flow_stats(thread_stats, config.numCores * config.numFlowsPerCore,
+  show_tx_flow_stats(flowStats, config.numCores * config.numFlowsPerCore,
                      &ProgramConfig::keepRunning);
 
   for (auto& thread : threads) {
