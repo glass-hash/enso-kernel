@@ -83,6 +83,11 @@ struct alignas(kCacheLineSize) stats_t {
   uint64_t nb_pkts;
 };
 
+struct alignas(kCacheLineSize) tx_stats_t {
+  uint64_t nb_bytes;
+  uint64_t nb_pkts;
+};
+
 /**
  * @brief Returns RTT, in number of cycles, for a given packet.
  *
@@ -92,12 +97,11 @@ struct alignas(kCacheLineSize) stats_t {
  * To convert from number of cycles to ns. Do `cycles * kNsPerTimestampCycle`.
  *
  * @param pkt Packet to retrieve the RTT from.
- * @param rtt_offset Offset in bytes where the RTT is stored.
  * @return Return RTT measure for the packet in number of cycles. If timestamp
  *         is not enabled on the NIC, the value returned is undefined.
  */
-inline uint32_t get_pkt_rtt(
-    const uint8_t* pkt, const uint8_t rtt_offset = kDefaultRttOffset) {
+inline uint32_t get_pkt_rtt(const uint8_t* pkt,
+                            const uint8_t rtt_offset = kDefaultRttOffset) {
   uint32_t rtt = *((uint32_t*)(pkt + rtt_offset));
   return be32toh(rtt);
 }
@@ -134,6 +138,16 @@ int set_core_id(std::thread& thread, int core_id);
 
 void show_stats(const std::vector<stats_t>& thread_stats,
                 volatile bool* keep_running);
+
+void show_tx_stats(const std::vector<tx_stats_t>& thread_stats,
+                   volatile bool* keep_running);
+
+void show_tx_flow_stats(const std::vector<tx_stats_t>& tx_flows,
+                        uint32_t flows_size, volatile bool* keep_running);
+
+void show_rx_flow_stats(const std::vector<uint64_t>& flow_stats,
+                        const stats_t* rx_stats, uint32_t flow_stats_size,
+                        volatile bool* keep_running);
 
 // Adapted from DPDK's rte_mov64() and rte_memcpy() functions.
 _enso_always_inline void mov64(uint8_t* dst, const uint8_t* src) {
@@ -178,6 +192,14 @@ _enso_always_inline void memcpy_64_align(void* dst, const void* src, size_t n) {
     dst = (uint8_t*)dst + 64;
     src = (const uint8_t*)src + 64;
   }
+}
+
+_enso_always_inline uint16_t get_pkt_dst_lsb(const uint8_t* addr) {
+  const struct ether_header* l2_hdr = (struct ether_header*)addr;
+  const struct iphdr* l3_hdr = (struct iphdr*)(l2_hdr + 1);
+  const uint16_t dst_lsb = be32toh(l3_hdr->daddr) & 0xffff;
+
+  return dst_lsb;
 }
 
 }  // namespace enso
