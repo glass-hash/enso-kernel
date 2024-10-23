@@ -1,0 +1,166 @@
+/*
+ * Copyright (c) 2024, Carnegie Mellon University
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted (subject to the limitations in the disclaimer
+ * below) provided that the following conditions are met:
+ *
+ *      * Redistributions of source code must retain the above copyright notice,
+ *      this list of conditions and the following disclaimer.
+ *
+ *      * Redistributions in binary form must reproduce the above copyright
+ *      notice, this list of conditions and the following disclaimer in the
+ *      documentation and/or other materials provided with the distribution.
+ *
+ *      * Neither the name of the copyright holder nor the names of its
+ *      contributors may be used to endorse or promote products derived from
+ *      this software without specific prior written permission.
+ *
+ * NO EXPRESS OR IMPLIED LICENSES TO ANY PARTY'S PATENT RIGHTS ARE GRANTED BY
+ * THIS LICENSE. THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT
+ * NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+#include "schedPerf.h"
+
+#include <unistd.h>
+
+#include <cstdlib>
+#include <iostream>
+#include <optional>
+#include <string>
+
+bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
+  int opt;
+  // Reset getopt
+  optind = 1;
+  config.mode = Mode::Unknown;
+
+  while ((opt = getopt(argc, argv, "s:c:")) != -1) {
+    switch (opt) {
+      case 's':
+        if (config.mode != Mode::Unknown) {
+          std::cerr << "Error: Cannot specify both server and client mode"
+                    << std::endl;
+          return false;
+        }
+        config.mode = Mode::Server;
+        config.serverConfig.numFlows = atoi(optarg);
+        if (config.serverConfig.numFlows <= 0) {
+          std::cerr << "Error: Number of connections must be positive"
+                    << std::endl;
+          return false;
+        }
+        break;
+
+      case 'c':
+        if (config.mode != Mode::Unknown) {
+          std::cerr << "Error: Cannot specify both server and client mode"
+                    << std::endl;
+          return false;
+        }
+        config.mode = Mode::Client;
+        config.clientConfig.numFlows = atoi(optarg);
+        if (config.clientConfig.numFlows <= 0) {
+          std::cerr << "Error: Number of connections must be positive"
+                    << std::endl;
+          return false;
+        }
+        break;
+
+      case '?':
+        std::cerr << "Error: Invalid option" << std::endl;
+        return false;
+    }
+  }
+
+  // Process remaining arguments based on mode
+  if (config.mode == Mode::Client) {
+    // Need at least 2 more arguments (cores and pcap path)
+    if (optind + 1 >= argc) {
+      std::cerr << "Error: Client mode requires <num-cores> and <pcap-path>"
+                << std::endl;
+      return false;
+    }
+
+    config.clientConfig.numCores = atoi(argv[optind]);
+    if (config.clientConfig.numCores <= 0) {
+      std::cerr << "Error: Number of cores must be positive" << std::endl;
+      return false;
+    }
+
+    config.clientConfig.pcapPath = argv[optind + 1];
+    optind += 2;
+
+    // Check for optional count parameter
+    while (optind < argc) {
+      std::string arg = argv[optind];
+      if (arg == "--count") {
+        if (optind + 1 >= argc) {
+          std::cerr << "Error: --count requires a value" << std::endl;
+          return false;
+        }
+        int count = atoi(argv[optind + 1]);
+        if (count <= 0) {
+          std::cerr << "Error: Count must be positive" << std::endl;
+          return false;
+        }
+        config.clientConfig.count = count;
+        optind += 2;
+      } else {
+        std::cerr << "Error: Unknown argument: " << arg << std::endl;
+        return false;
+      }
+    }
+  } else if (config.mode == Mode::Server) {
+    // Server mode shouldn't have any additional arguments
+    if (optind < argc) {
+      std::cerr << "Error: Unexpected additional arguments for server mode"
+                << std::endl;
+      return false;
+    }
+  } else {
+    std::cerr << "Error: Must specify either server (-s) or client (-c) mode"
+              << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
+int main(int argc, char* argv[]) {
+  ProgramConfig config;
+  if (!ProgramConfig::parseArgs(argc, argv, config)) {
+    std::cerr << "Usage:\n"
+              << "  Server mode: " << argv[0] << " -s <num-flows>\n"
+              << "  Client mode: " << argv[0]
+              << " -c <num-flows> <num-cores> <pcap-path> [--count <value>]"
+              << std::endl;
+    return 1;
+  }
+
+  if (config.getMode() == ProgramConfig::Mode::Server) {
+    std::unique_ptr<Server> s =
+        std::make_unique<Server>(config.getServerConfig());
+    s->startServer();
+  } else {
+    const auto& clientConfig = config.getClientConfig();
+    std::cout << "Running in client mode with:\n"
+              << "  Connections: " << clientConfig.numFlows << "\n"
+              << "  Cores: " << clientConfig.numCores << "\n"
+              << "  PCAP path: " << clientConfig.pcapPath << "\n";
+    if (clientConfig.count) {
+      std::cout << "  Count: " << *clientConfig.count << "\n";
+    }
+  }
+
+  return 0;
+}

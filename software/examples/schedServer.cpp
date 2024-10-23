@@ -31,7 +31,6 @@
  */
 
 #include <enso/helpers.h>
-#include <enso/pipe.h>
 #include <pcap/pcap.h>
 
 #include <chrono>
@@ -42,6 +41,7 @@
 #include <thread>
 
 #include "example_helpers.h"
+#include "schedPerf.h"
 
 #define INTEL_FPGA_PCIE_BDF "65:00.0"
 #define DEFAULT_STATS_DELAY 1000
@@ -50,13 +50,17 @@
 #define FPGA_PACKET_OVERHEAD 20
 #define MIN_PACKET_SIZE 64
 #define DEFAULT_NB_QUEUES 4
+#define MAX_FLOWS 4096
 
-using enso::Device;
-using enso::RxPipe;
+static volatile bool keepRunning = true;
 
-static volatile bool keep_running = true;
+void int_handler(int signal __attribute__((unused))) { keepRunning = false; }
 
-void rcv_pkts(enso::stats_t* stats, std::vector<uint64_t>& pkts_per_flow) {
+Server::Server(const ServerConfig& serverConfig) {
+  numFlows = serverConfig.numFlows;
+}
+
+void Server::runRx(enso::stats_t* stats, std::vector<uint64_t>& pktsPerFlow) {
   // create the device and initialize the RxPipe
   std::unique_ptr<Device> dev = Device::Create(INTEL_FPGA_PCIE_BDF);
   if (!dev) {
@@ -79,67 +83,52 @@ void rcv_pkts(enso::stats_t* stats, std::vector<uint64_t>& pkts_per_flow) {
     rxPipes.push_back(rxPipe);
   }
 
-  while (keep_running) {
+  while (keepRunning) {
     uint64_t nb_pkts = 0;
 
-    RxPipe* rx_pipe = dev->NextRxPipeToRecv();
-    if (unlikely(rx_pipe == nullptr)) {
+    RxPipe* rxPipe = dev->NextRxPipeToRecv();
+    if (unlikely(rxPipe == nullptr)) {
       continue;
     }
 
-    auto batch = rx_pipe->PeekPktsFromTail();
+    auto batch = rxPipe->PeekPktsFromTail();
     for (auto pkt : batch) {
       (void)pkt;
-      uint16_t pkt_dst = enso::get_pkt_dst_lsb(pkt);
-      pkts_per_flow[pkt_dst]++;
+      uint16_t pktDst = enso::get_pkt_dst_lsb(pkt);
+      pktsPerFlow[pktDst]++;
       nb_pkts++;
     }
     uint32_t batch_length = batch.processed_bytes();
-    rx_pipe->ConfirmBytes(batch_length);
+    rxPipe->ConfirmBytes(batch_length);
 
     stats->recv_bytes += batch_length;
     stats->nb_batches++;
     stats->nb_pkts += nb_pkts;
 
-    rx_pipe->Clear();
+    rxPipe->Clear();
   }
 }
 
-/*
- * Interrupt handler for SIG_INT.
- * Sets the run variable to 0 so that the RX thread exists.
- *
- * */
-void int_handler(int signal __attribute__((unused))) { keep_running = false; }
-
-int main(int argc, const char* argv[]) {
-  if (argc != 2) {
-    std::cerr << "Usage: " << argv[0] << " NB_EXPECTED_FLOWS" << std::endl;
-    std::cerr << "NB_EXPECTED_FLOWS: Number of expected flows." << std::endl;
-    return 1;
-  }
-  // init signal handler
+void Server::startServer() {
+  std::cout << "Running in server mode with " << numFlows << " connections"
+            << std::endl;
   signal(SIGINT, int_handler);
 
-  std::vector<enso::stats_t> thread_stats(1);
-  std::vector<uint64_t> pkts_per_flow(4096);
-  uint32_t num_expected_flows = atoi(argv[1]);
+  std::vector<enso::stats_t> threadStats(1);
+  std::vector<uint64_t> pktsPerFlow(MAX_FLOWS);
 
-  // start the RX thread
-  std::thread rx_thread(rcv_pkts, &thread_stats[0], std::ref(pkts_per_flow));
-  enso::set_core_id(rx_thread, 0);
+  std::thread rxThread(&Server::runRx, this, &threadStats[0],
+                       std::ref(pktsPerFlow));
+  enso::set_core_id(rxThread, 0);
+  enso::show_rx_flow_stats(pktsPerFlow, &threadStats[0], numFlows,
+                           &keepRunning);
 
-  // start the stats collection in the main thread
-  enso::show_rx_flow_stats(pkts_per_flow, &thread_stats[0], num_expected_flows,
-                           &keep_running);
+  rxThread.join();
 
-  rx_thread.join();
-
-  uint64_t total_pkts = 0;
-  for (uint32_t i = 0; i < num_expected_flows; i++) {
-    std::cout << "Flow " << i << ": " << pkts_per_flow[i] << std::endl;
-    total_pkts += pkts_per_flow[i];
+  uint64_t totalPkts = 0;
+  for (int i = 0; i < numFlows; i++) {
+    std::cout << "Flow " << i << ": " << pktsPerFlow[i] << std::endl;
+    totalPkts += pktsPerFlow[i];
   }
-  std::cout << "Total packets received: " << total_pkts << std::endl;
-  return 0;
+  std::cout << "Total packets received: " << totalPkts << std::endl;
 }

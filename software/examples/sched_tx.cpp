@@ -50,13 +50,6 @@
 using enso::Device;
 using enso::TxPipe;
 
-struct parsed_args_t {
-  uint32_t nb_cores;
-  uint32_t nb_flows;
-  std::string pcap_filename;
-  uint64_t total_pkts;
-};
-
 /**
  * @brief Structure to store an Enso TxPipe object and attributes related
  * to it.
@@ -225,16 +218,6 @@ int main(int argc, const char* argv[]) {
   std::vector<enso::tx_stats_t> thread_stats(parsed_args.nb_cores *
                                              parsed_args.nb_flows);
 
-  /*for (uint32_t core_id = 0; core_id < parsed_args.nb_cores; ++core_id) {
-    threads.emplace_back(run_tx, std::ref(thread_stats), core_id,
-                         parsed_args.nb_flows, std::ref(tx_pipes),
-                         parsed_args.total_pkts);
-    if (enso::set_core_id(threads.back(), core_id)) {
-      std::cerr << "Error setting CPU affinity" << std::endl;
-      return 6;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  }*/
   for (uint32_t flow_id = 0; flow_id < parsed_args.nb_flows; flow_id++) {
     threads.emplace_back(run_tx, std::ref(thread_stats), flow_id,
                          std::ref(tx_pipes[flow_id]));
