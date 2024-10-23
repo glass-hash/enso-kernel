@@ -77,7 +77,7 @@ void Server::runRx(enso::stats_t* stats, std::vector<uint64_t>& pktsPerFlow) {
   }
 
   while (ProgramConfig::keepRunning) {
-    uint64_t nb_pkts = 0;
+    uint64_t numPkts = 0;
 
     RxPipe* rxPipe = dev->NextRxPipeToRecv();
     if (unlikely(rxPipe == nullptr)) {
@@ -89,14 +89,14 @@ void Server::runRx(enso::stats_t* stats, std::vector<uint64_t>& pktsPerFlow) {
       (void)pkt;
       uint16_t pktDst = enso::get_pkt_dst_lsb(pkt);
       pktsPerFlow[pktDst]++;
-      nb_pkts++;
+      numPkts++;
     }
-    uint32_t batch_length = batch.processed_bytes();
-    rxPipe->ConfirmBytes(batch_length);
+    uint32_t batchLen = batch.processed_bytes();
+    rxPipe->ConfirmBytes(batchLen);
 
-    stats->recv_bytes += batch_length;
+    stats->recv_bytes += batchLen;
     stats->nb_batches++;
-    stats->nb_pkts += nb_pkts;
+    stats->nb_pkts += numPkts;
 
     rxPipe->Clear();
   }

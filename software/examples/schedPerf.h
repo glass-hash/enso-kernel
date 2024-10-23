@@ -116,7 +116,7 @@ class Server {
   explicit Server(const ServerConfig& serverConfig);
 
  private:
-  void runRx(enso::stats_t* stats, std::vector<uint64_t>& pkts_per_flow);
+  void runRx(enso::stats_t* stats, std::vector<uint64_t>& pktsPerFlow);
 };
 
 class Client {
