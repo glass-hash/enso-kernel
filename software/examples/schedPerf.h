@@ -78,15 +78,17 @@ struct EnsoTxPipe {
 
 // structure for libpcap
 struct PcapHandler {
-  PcapHandler(std::unique_ptr<Device>& dev_, pcap_t* pcap_, Client* c_)
-      : dev(dev_), pcap(pcap_), client(c_) {}
+  PcapHandler(std::vector<std::unique_ptr<Device>>& devs_, pcap_t* pcap_,
+              Client* c_, uint16_t flowsPerCore)
+      : devs(devs_), pcap(pcap_), client(c_), numFlowsPerCore(flowsPerCore) {}
   // Pointer to Enso device
-  std::unique_ptr<Device>& dev;
+  std::vector<std::unique_ptr<Device>>& devs;
   // Pipes to store the packets from the PCAP file
   std::vector<struct EnsoTxPipe> txPipes;
   // libpcap object associated with the opened PCAP file
   pcap_t* pcap;
   Client* client;
+  uint16_t numFlowsPerCore;
 };
 
 class ProgramConfig {

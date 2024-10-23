@@ -70,9 +70,10 @@ void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
     exit(1);
   }
 
+  uint16_t devId = context->txPipes.size() / context->numFlowsPerCore;
   uint32_t len = enso::get_pkt_len(pktBytes);
   uint32_t nb_flits = (len - 1) / MIN_PACKET_SIZE + 1;
-  TxPipe* pipe = context->dev->AllocateTxPipe();
+  TxPipe* pipe = context->devs[devId]->AllocateTxPipe();
   if (!pipe) {
     std::cerr << "Problem creating TX pipe" << std::endl;
     exit(2);
@@ -121,10 +122,14 @@ int Client::startClient(const ClientConfig& config) {
   if (config.count) {
     std::cout << "  Count: " << *config.count << "\n";
   }
-  std::unique_ptr<Device> dev = Device::Create(INTEL_FPGA_PCIE_BDF);
-  if (!dev) {
-    std::cerr << "Problem creating device" << std::endl;
-    exit(2);
+
+  std::vector<std::unique_ptr<Device>> devs(config.numCores);
+  for (uint16_t i = 0; i < config.numCores; i++) {
+    devs[i] = Device::Create(INTEL_FPGA_PCIE_BDF);
+    if (!devs[i]) {
+      std::cerr << "Problem creating device" << std::endl;
+      exit(2);
+    }
   }
 
   char errbuf[PCAP_ERRBUF_SIZE];
@@ -134,7 +139,7 @@ int Client::startClient(const ClientConfig& config) {
     return 2;
   }
 
-  struct PcapHandler context(dev, pcap, this);
+  struct PcapHandler context(devs, pcap, this, config.numFlowsPerCore);
   std::vector<struct EnsoTxPipe>& txPipes = context.txPipes;
 
   if (pcap_loop(context.pcap, 0, Client::pcapPktHandler, (u_char*)&context) <
