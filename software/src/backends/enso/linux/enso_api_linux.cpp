@@ -158,7 +158,8 @@ int EnsoDev::send_tx_pipe(uint64_t phys_addr, uint32_t len,
   result = ioctl(m_dev_handle, ENSO_IOCTL_SEND_TX_PIPE, &stpp);
 
   if (result != 0) {
-    std::cout << "failure at send_tx ioctl " << result << std::endl;
+    // return failure since we cannot send it at this time, application will
+    // retry
     return -1;
   }
 
