@@ -119,10 +119,6 @@ int Client::startClient(const ClientConfig& config) {
             << "\n"
             << "  Cores: " << config.numCores << "\n"
             << "  PCAP path: " << config.pcapPath << "\n";
-  if (config.count) {
-    std::cout << "  Count: " << *config.count << "\n";
-  }
-
   std::vector<std::unique_ptr<Device>> devs(config.numCores);
   for (uint16_t i = 0; i < config.numCores; i++) {
     devs[i] = Device::Create(INTEL_FPGA_PCIE_BDF);

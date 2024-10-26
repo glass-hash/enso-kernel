@@ -36,7 +36,6 @@
 #include <csignal>
 #include <cstdlib>
 #include <iostream>
-#include <optional>
 #include <string>
 
 volatile bool ProgramConfig::keepRunning = true;
@@ -107,26 +106,6 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
     config.clientConfig.pcapPath = argv[optind + 1];
     optind += 2;
 
-    // Check for optional count parameter
-    while (optind < argc) {
-      std::string arg = argv[optind];
-      if (arg == "--count") {
-        if (optind + 1 >= argc) {
-          std::cerr << "Error: --count requires a value" << std::endl;
-          return false;
-        }
-        int count = atoi(argv[optind + 1]);
-        if (count <= 0) {
-          std::cerr << "Error: Count must be positive" << std::endl;
-          return false;
-        }
-        config.clientConfig.count = count;
-        optind += 2;
-      } else {
-        std::cerr << "Error: Unknown argument: " << arg << std::endl;
-        return false;
-      }
-    }
   } else if (config.mode == Mode::Server) {
     // Server mode shouldn't have any additional arguments
     if (optind < argc) {
@@ -146,12 +125,11 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
 int main(int argc, char* argv[]) {
   ProgramConfig config;
   if (!ProgramConfig::parseArgs(argc, argv, config)) {
-    std::cerr
-        << "Usage:\n"
-        << "  Server mode: " << argv[0] << " -s <num-flows>\n"
-        << "  Client mode: " << argv[0]
-        << " -c <num-flows-per-core> <num-cores> <pcap-path> [--count <value>]"
-        << std::endl;
+    std::cerr << "Usage:\n"
+              << "  Server mode: " << argv[0] << " -s <num-flows>\n"
+              << "  Client mode: " << argv[0]
+              << " -c <num-flows-per-core> <num-cores> <pcap-path>"
+              << std::endl;
     return 1;
   }
   // init signal handler

@@ -47,7 +47,6 @@ struct ClientConfig {
   uint16_t numFlowsPerCore;
   uint16_t numCores;
   std::string pcapPath;
-  std::optional<int> count;
 };
 
 struct ServerConfig {
