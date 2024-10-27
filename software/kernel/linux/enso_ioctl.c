@@ -1642,19 +1642,22 @@ int enso_sched(void *data) {
       pipe_id = cur_batch.ioctl_params.id;
       batch_size = cur_batch.ioctl_params.len;
       notif_buf_pair = dev_bk->notif_buf_pairs[notif_buf_id];
-      send_batch(notif_buf_pair, &cur_batch.ioctl_params);
-      // increment head
-      dev_bk->tx_ring_head = (dev_bk->tx_ring_head + 1) % NOTIFICATION_BUF_SIZE;
-      // wait for the NIC to send it
-      while (num_comp == 0) {
-        // TODO(kshitij): make this call blocking and get rid of the num_comp
-        // variable
-        update_tx_head(notif_buf_pair);
-        num_comp = notif_buf_pair->nb_unreported_completions;
+      if (notif_buf_pair) {
+        send_batch(notif_buf_pair, &cur_batch.ioctl_params);
+        // increment head
+        dev_bk->tx_ring_head =
+            (dev_bk->tx_ring_head + 1) % NOTIFICATION_BUF_SIZE;
+        // wait for the NIC to send it
+        while (num_comp == 0) {
+          // TODO(kshitij): make this call blocking and get rid of the num_comp
+          // variable
+          update_tx_head(notif_buf_pair);
+          num_comp = notif_buf_pair->nb_unreported_completions;
+        }
+        notif_buf_pair->nb_unreported_completions = 0;
+        // add it to the completions
+        atomic_add(batch_size, &dev_bk->tx_completions[pipe_id]);
       }
-      notif_buf_pair->nb_unreported_completions = 0;
-      // add it to the completions
-      atomic_add(batch_size, &dev_bk->tx_completions[pipe_id]);
     }
     yield();
   }
