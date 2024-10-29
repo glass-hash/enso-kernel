@@ -33,6 +33,11 @@
 #ifndef SOFTWARE_KERNEL_LINUX_ENSO_SETUP_H_
 #define SOFTWARE_KERNEL_LINUX_ENSO_SETUP_H_
 
+// Reason for the below macro:
+// https://lore.kernel.org/all/CAP3s5k_QNQqjMqLP68KvtchpmUGc9dnfSfmsz2OXh6opFpKW+w@mail.gmail.com/
+#ifndef X86_FEATURE_LA57
+#include <asm/cpufeatures.h>
+#endif
 #include <asm/io.h>
 #include <linux/cdev.h>
 #include <linux/fs.h>
