@@ -134,7 +134,6 @@ struct dev_bookkeep {
   uint8_t *notif_q_status;
   uint8_t *rx_pipe_id_status;
   uint8_t *tx_pipe_id_status;
-  struct tx_send_ring_element *tx_send_ring;
   atomic_t *tx_completions;
   struct task_struct *enso_sched_thread;
   struct notification_buf_pair **notif_buf_pairs;
@@ -142,8 +141,6 @@ struct dev_bookkeep {
   uint32_t nb_fb_queues;
   uint32_t nb_tx_pipes;
   bool enable_rr;
-  uint16_t tx_ring_head;
-  uint16_t tx_ring_tail;
   bool sched_run;
   spinlock_t lock;
 };
@@ -279,6 +276,7 @@ struct notification_buf_pair {
   uint32_t *next_rx_pipe_ids;
   uint8_t *wrap_tracker;
   uint32_t *pending_rx_pipe_tails;
+  struct tx_send_ring_element *tx_send_ring;
 
   uint64_t tx_full_cnt;
 
@@ -290,6 +288,8 @@ struct notification_buf_pair {
 
   uint16_t next_rx_ids_head;
   uint16_t next_rx_ids_tail;
+  uint16_t tx_ring_head;
+  uint16_t tx_ring_tail;
 };
 
 /**

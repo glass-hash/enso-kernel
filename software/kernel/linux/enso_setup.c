@@ -96,15 +96,6 @@ static __init int enso_init(void) {
     goto failed_tx_pipe_id_status_alloc;
   }
 
-  dev_bk->tx_send_ring = kzalloc(
-      NOTIFICATION_BUF_SIZE * sizeof(struct tx_send_ring_element), GFP_KERNEL);
-  if (dev_bk->tx_send_ring == NULL) {
-    printk("couldn't create batch ring buffer\n");
-    goto failed_tx_send_ring_alloc;
-  }
-  dev_bk->tx_ring_head = 0;
-  dev_bk->tx_ring_tail = 0;
-
   dev_bk->tx_completions = kzalloc(MAX_NB_FLOWS * sizeof(atomic_t), GFP_KERNEL);
   if (dev_bk->tx_completions == NULL) {
     printk("couldn't create completion atomic buffer\n");
@@ -133,8 +124,6 @@ static __init int enso_init(void) {
 failed_notif_buf_pair_alloc:
   kfree(dev_bk->tx_completions);
 failed_tx_completions_alloc:
-  kfree(dev_bk->tx_send_ring);
-failed_tx_send_ring_alloc:
   kfree(dev_bk->tx_pipe_id_status);
 failed_tx_pipe_id_status_alloc:
   kfree(dev_bk->rx_pipe_id_status);
@@ -157,7 +146,6 @@ static void enso_exit(void) {
   global_bk.intel_enso = NULL;
   kfree(global_bk.dev_bk->notif_buf_pairs);
   kfree(global_bk.dev_bk->tx_completions);
-  kfree(global_bk.dev_bk->tx_send_ring);
   kfree(global_bk.dev_bk->tx_pipe_id_status);
   kfree(global_bk.dev_bk->rx_pipe_id_status);
   kfree(global_bk.dev_bk->notif_q_status);

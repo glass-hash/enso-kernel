@@ -155,10 +155,6 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
   // Retrieve bookkeeping information.
   chr_dev_bk = filp->private_data;
   dev_bk = chr_dev_bk->dev_bk;
-  if (unlikely(down_interruptible(&dev_bk->sem))) {
-    printk("interrupted while attempting to obtain device semaphore.");
-    return -ERESTARTSYS;
-  }
 
   // Determine access type.
   switch (cmd) {
@@ -166,65 +162,160 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
       retval = test();
       break;
     case ENSO_IOCTL_GET_NB_FALLBACK_QUEUES:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = get_nb_fallback_queues(dev_bk, (unsigned int __user *)uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_SET_RR_STATUS:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = set_rr_status(dev_bk, (bool)uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_GET_RR_STATUS:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = get_rr_status(dev_bk, (bool __user *)uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_ALLOC_NOTIF_BUFFER_ID:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = alloc_notif_buffer_id(chr_dev_bk, (unsigned int __user *)uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_FREE_NOTIF_BUFFER_ID:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = free_notif_buffer_id(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_ALLOC_RX_PIPE_ID:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = alloc_rx_pipe_id(chr_dev_bk, (unsigned int __user *)uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_FREE_RX_PIPE_ID:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = free_rx_pipe_id(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_ALLOC_NOTIF_BUFFER:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = alloc_notif_buffer(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_SEND_TX_PIPE:
       retval = send_tx_pipe(chr_dev_bk, uarg);
       break;
     case ENSO_IOCTL_GET_UNREPORTED_COMPLETIONS:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval =
           get_unreported_completions(chr_dev_bk, (unsigned int __user *)uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_SEND_CONFIG:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = send_config(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_ALLOC_RX_PIPE:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = alloc_rx_pipe(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_FREE_RX_PIPE:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = free_rx_pipe(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_CONSUME_RX:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = consume_rx_pipe(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_FULL_ADV_PIPE:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = fully_advance_pipe(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_ADVANCE_PIPE:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = advance_pipe(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_NEXT_RX_PIPE_RCV:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = next_rx_pipe_to_recv(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_PREFETCH_PIPE:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = prefetch_pipe(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_ALLOC_TX_PIPE_ID:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = alloc_tx_pipe_id(chr_dev_bk, (int __user *)uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_FREE_TX_PIPE_ID:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
       retval = free_tx_pipe_id(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
       break;
     case ENSO_IOCTL_GET_PIPE_COMPLETIONS:
       retval = get_pipe_completions(chr_dev_bk, uarg);
@@ -232,8 +323,6 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
     default:
       retval = -ENOTTY;
   }
-
-  up(&dev_bk->sem);
 
   return retval;
 }
@@ -647,6 +736,16 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   enso_io_write_32((uint32_t)rx_buf_phys_addr, &nbp_q_regs->tx_mem_low);
   enso_io_write_32((uint32_t)(rx_buf_phys_addr >> 32),
                    &nbp_q_regs->tx_mem_high);
+
+  notif_buf_pair->tx_send_ring = kzalloc(
+      NOTIFICATION_BUF_SIZE * sizeof(struct tx_send_ring_element), GFP_KERNEL);
+  if (notif_buf_pair->tx_send_ring == NULL) {
+    printk("couldn't create send ring buffer\n");
+    return -ENOMEM;
+  }
+  notif_buf_pair->tx_ring_head = 0;
+  notif_buf_pair->tx_ring_tail = 0;
+
   // update the notification buffer pair in dev_bk
   dev_bk->notif_buf_pairs[notif_buf_pair->id] = notif_buf_pair;
   return 0;
@@ -666,7 +765,6 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
 static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                          unsigned long uarg) {
   struct enso_send_tx_pipe_params stpp;
-  struct dev_bookkeep *dev_bk;
   struct notification_buf_pair *notif_buf_pair = chr_dev_bk->notif_buf_pair;
   if (copy_from_user(&stpp, (void __user *)uarg, sizeof(stpp))) {
     printk("couldn't copy arg from user.");
@@ -678,16 +776,17 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     return -EFAULT;
   }
 
-  dev_bk = chr_dev_bk->dev_bk;
-
-  if (((dev_bk->tx_ring_tail + 1) % NOTIFICATION_BUF_SIZE) ==
-      dev_bk->tx_ring_head) {
+  if (((notif_buf_pair->tx_ring_tail + 1) % NOTIFICATION_BUF_SIZE) ==
+      notif_buf_pair->tx_ring_head) {
     // buffer is full
     return -1;
   }
-  dev_bk->tx_send_ring[dev_bk->tx_ring_tail].ioctl_params = stpp;
-  dev_bk->tx_send_ring[dev_bk->tx_ring_tail].notif_buf_id = notif_buf_pair->id;
-  dev_bk->tx_ring_tail = (dev_bk->tx_ring_tail + 1) % NOTIFICATION_BUF_SIZE;
+  notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_tail].ioctl_params =
+      stpp;
+  notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_tail].notif_buf_id =
+      notif_buf_pair->id;
+  notif_buf_pair->tx_ring_tail =
+      (notif_buf_pair->tx_ring_tail + 1) % NOTIFICATION_BUF_SIZE;
   return 0;
 }
 
@@ -748,14 +847,14 @@ static long get_pipe_completions(struct chr_dev_bookkeep *chr_dev_bk,
   int32_t pipe_id = (int32_t)uarg;
 
   notif_buf_pair = chr_dev_bk->notif_buf_pair;
-  dev_bk = chr_dev_bk->dev_bk;
   if (notif_buf_pair == NULL) {
     printk("Notification buf pair is NULL");
     return -EINVAL;
   }
+  dev_bk = chr_dev_bk->dev_bk;
 
-  num_bytes = atomic_read(&dev_bk->tx_completions[pipe_id]);
-  atomic_sub(num_bytes, &dev_bk->tx_completions[pipe_id]);
+  // read and set to zero
+  num_bytes = atomic_xchg(&dev_bk->tx_completions[pipe_id], 0);
 
   return num_bytes;
 }
@@ -1201,10 +1300,11 @@ static long alloc_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
     }
   }
 
+  atomic_set(&dev_bk->tx_completions[pipe_id], 0);
   dev_bk->nb_tx_pipes++;
 
   if (pipe_id < 0) {
-    printk("couldn't allocate notification buffer.");
+    printk("couldn't allocate pipe id\n");
     return -ENOMEM;
   }
   printk("Allocated TX pipe with id = %d\n", pipe_id);
@@ -1636,28 +1736,37 @@ int enso_sched(void *data) {
   printk("Starting enso_sched\n");
   while (!kthread_should_stop()) {
     // dequeue an element from the ring buffer and send it
-    if (dev_bk->tx_ring_head != dev_bk->tx_ring_tail) {
-      cur_batch = dev_bk->tx_send_ring[dev_bk->tx_ring_head];
-      notif_buf_id = cur_batch.notif_buf_id;
-      pipe_id = cur_batch.ioctl_params.id;
-      batch_size = cur_batch.ioctl_params.len;
+    notif_buf_id = 0;
+    while (notif_buf_id < MAX_NB_APPS) {
       notif_buf_pair = dev_bk->notif_buf_pairs[notif_buf_id];
       if (notif_buf_pair) {
-        send_batch(notif_buf_pair, &cur_batch.ioctl_params);
-        // increment head
-        dev_bk->tx_ring_head =
-            (dev_bk->tx_ring_head + 1) % NOTIFICATION_BUF_SIZE;
-        // wait for the NIC to send it
-        while (num_comp == 0) {
-          // TODO(kshitij): make this call blocking and get rid of the num_comp
-          // variable
-          update_tx_head(notif_buf_pair);
-          num_comp = notif_buf_pair->nb_unreported_completions;
+        if (notif_buf_pair->tx_ring_head != notif_buf_pair->tx_ring_tail) {
+          cur_batch =
+              notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_head];
+          pipe_id = cur_batch.ioctl_params.id;
+          batch_size = cur_batch.ioctl_params.len;
+          send_batch(notif_buf_pair, &cur_batch.ioctl_params);
+          // increment head
+          notif_buf_pair->tx_ring_head =
+              (notif_buf_pair->tx_ring_head + 1) % NOTIFICATION_BUF_SIZE;
+          // wait for the NIC to send it
+          while (num_comp == 0) {
+            // TODO(kshitij): make this call blocking and get rid of the
+            // num_comp variable
+            update_tx_head(notif_buf_pair);
+            num_comp = notif_buf_pair->nb_unreported_completions;
+          }
+          // reset completions to zero
+          notif_buf_pair->nb_unreported_completions = 0;
+          num_comp = 0;
+          // add it to the completions
+          atomic_add(batch_size, &dev_bk->tx_completions[pipe_id]);
         }
-        notif_buf_pair->nb_unreported_completions = 0;
-        // add it to the completions
-        atomic_add(batch_size, &dev_bk->tx_completions[pipe_id]);
+      } else {
+        // assume that notification buffers are allocated sequentially
+        break;
       }
+      notif_buf_id++;
     }
     yield();
   }

@@ -314,6 +314,7 @@ static void free_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk) {
   if (notif_buf_pair->wrap_tracker != NULL) {
     kfree(notif_buf_pair->wrap_tracker);
   }
+  kfree(notif_buf_pair->tx_send_ring);
   kfree(notif_buf_pair);
   chr_dev_bk->notif_buf_pair = NULL;
 }
