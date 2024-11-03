@@ -377,6 +377,8 @@ class Device {
 
   int32_t next_pipe_id_ = -1;
 
+  uint32_t pending_completions = 0;
+
   uint32_t tx_pr_head_ = 0;
   uint32_t tx_pr_tail_ = 0;
   // TODO(kshitij): Clean this up once the scheduler works

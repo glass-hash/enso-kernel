@@ -190,6 +190,11 @@ Device::~Device() {
     delete pipe;
   }
 
+  while (pending_completions > 0) {
+    for (auto& pipe : tx_pipes_) {
+      GetPipeCompletions(pipe->id());
+    }
+  }
   for (auto& pipe : tx_pipes_) {
     tx_pipes_map_[pipe->id()] = nullptr;
     delete pipe;
@@ -347,6 +352,7 @@ void Device::Send(uint32_t tx_enso_pipe_id, uint64_t phys_addr,
   while (send_to_queue(&notification_buf_pair_, phys_addr, nb_bytes,
                        tx_enso_pipe_id) != 0) {
   }
+  pending_completions += nb_bytes;
 }
 
 void Device::ProcessCompletions() {
@@ -372,6 +378,7 @@ void Device::GetPipeCompletions(uint32_t tx_pipe_id) {
   uint32_t nb_bytes = get_pipe_completions(&notification_buf_pair_, tx_pipe_id);
   TxPipe* pipe = tx_pipes_map_[tx_pipe_id];
   pipe->NotifyCompletion(nb_bytes);
+  pending_completions -= nb_bytes;
 }
 
 int Device::EnableTimeStamping(uint8_t offset) {
