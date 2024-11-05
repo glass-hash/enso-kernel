@@ -44,13 +44,17 @@ void ProgramConfig::sigintHandler(int signal __attribute__((unused))) {
   keepRunning = false;
 }
 
+// TODO(kshitij): Fix argument parsing with proper required and optional
+// arguments
 bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
   int opt;
   // Reset getopt
   optind = 1;
   config.mode = Mode::Unknown;
+  uint16_t timeoutVal = 0;
+  uint32_t batchSize = 0;
 
-  while ((opt = getopt(argc, argv, "s:c:")) != -1) {
+  while ((opt = getopt(argc, argv, "s:c:t:b:")) != -1) {
     switch (opt) {
       case 's':
         if (config.mode != Mode::Unknown) {
@@ -82,15 +86,33 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
         }
         break;
 
+      case 't':
+        timeoutVal = atoi(optarg);
+        if (timeoutVal <= 0) {
+          std::cerr << "Invalid timeout value" << std::endl;
+          return false;
+        }
+        break;
+
+      case 'b':
+        batchSize = atoi(optarg);
+        if ((batchSize == 0) || (batchSize > 131072)) {
+          std::cerr << "Invalid batch size value" << std::endl;
+          return false;
+        }
+        break;
+
       case '?':
         std::cerr << "Error: Invalid option" << std::endl;
         return false;
     }
   }
 
+  std::cout << "Opt index = " << optind << std::endl;
   // Process remaining arguments based on mode
   if (config.mode == Mode::Client) {
     // Need at least 2 more arguments (cores and pcap path)
+    config.clientConfig.timeout = timeoutVal;
     if (optind + 1 >= argc) {
       std::cerr << "Error: Client mode requires <num-cores> and <pcap-path>"
                 << std::endl;
@@ -104,13 +126,21 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
     }
 
     config.clientConfig.pcapPath = argv[optind + 1];
+    config.clientConfig.batchSize = (batchSize == 0) ? 131072 : batchSize;
     optind += 2;
 
   } else if (config.mode == Mode::Server) {
     // Server mode shouldn't have any additional arguments
+    if (batchSize != 0) {
+      std::cerr << "Error: Server mode cannot have batch size" << std::endl;
+      return false;
+    }
     if (optind < argc) {
       std::cerr << "Error: Unexpected additional arguments for server mode"
                 << std::endl;
+      return false;
+    } else if (argc < 3) {
+      std::cerr << "Error: Not enough arguments for server mode" << std::endl;
       return false;
     }
   } else {
@@ -128,7 +158,8 @@ int main(int argc, char* argv[]) {
     std::cerr << "Usage:\n"
               << "  Server mode: " << argv[0] << " -s <num-flows>\n"
               << "  Client mode: " << argv[0]
-              << " -c <num-flows-per-core> <num-cores> <pcap-path>"
+              << " -c <num-flows-per-core> <num-cores> <pcap-path> -t "
+                 "<timeout> -b <batch-size>"
               << std::endl;
     return 1;
   }

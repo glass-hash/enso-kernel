@@ -34,24 +34,25 @@
 
 #include <chrono>
 #include <cstdint>
+#include <fstream>
 #include <iostream>
 #include <memory>
 
 #include "example_helpers.h"
 #include "schedPerf.h"
 
-#define TX_BUFFER_MAX_SIZE 131072
 #define INTEL_FPGA_PCIE_BDF "65:00.0"
 #define MIN_PACKET_SIZE 64
 
 Client::Client(const ClientConfig& config) { startClient(config); }
 
 void Client::fillPipeWithPackets(uint8_t* pipeBuf, uint32_t& alignedBytes,
-                                 uint32_t& rawBytes, uint32_t& pkts) {
+                                 uint32_t& rawBytes, uint32_t& pkts,
+                                 uint32_t batchSize) {
   uint32_t initBufLength = alignedBytes;
   uint32_t initGoodBytes = rawBytes;
   uint32_t initNumPkts = pkts;
-  while ((alignedBytes + initBufLength) <= TX_BUFFER_MAX_SIZE) {
+  while ((alignedBytes + initBufLength) <= batchSize) {
     memcpy(pipeBuf + alignedBytes, pipeBuf, initBufLength);
     alignedBytes += initBufLength;
     rawBytes += initGoodBytes;
@@ -78,15 +79,28 @@ void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
     std::cerr << "Problem creating TX pipe" << std::endl;
     exit(2);
   }
-  uint8_t* buf = (uint8_t*)malloc(TX_BUFFER_MAX_SIZE * sizeof(uint8_t));
+  uint8_t* buf;
+  if (posix_memalign((void**)&buf, 64, context->batchSize * sizeof(uint8_t)) !=
+      0) {
+    std::cerr << "Posix memalign failed" << std::endl;
+    exit(2);
+  }
   struct EnsoTxPipe etp(pipe, buf);
   memcpy(buf, pktBytes, len);
   etp.numAlignedBytes = numFlits * MIN_PACKET_SIZE;
   etp.numRawBytes = len;
   etp.numPkts = 1;
   context->client->fillPipeWithPackets(buf, etp.numAlignedBytes,
-                                       etp.numRawBytes, etp.numPkts);
+                                       etp.numRawBytes, etp.numPkts,
+                                       context->batchSize);
   context->txPipes.push_back(etp);
+}
+
+inline uint64_t get_ns_chrono(void) {
+  auto now = std::chrono::steady_clock::now();
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+             now.time_since_epoch())
+      .count();
 }
 
 void Client::runTx(std::vector<enso::tx_stats_t>& stats,
@@ -96,19 +110,35 @@ void Client::runTx(std::vector<enso::tx_stats_t>& stats,
   std::cout << "Running on core " << sched_getcpu() << std::endl;
   uint16_t startInd = coreId * flowsPerCore;
   uint16_t endInd = startInd + flowsPerCore;
+  /*int64_t now = 0;
+  int64_t tokens_lc = 0;
+  int64_t last_checkpoint = get_ns_chrono();
+
+  uint64_t rate = 12500000000;
+  uint64_t max_size = (int64_t)((int64_t)2*1024*1024*1024) / 8;
+  int64_t buffer = (int64_t) (max_size * 1000000000) / rate;
+  int64_t tokens = buffer;
+  int64_t batch_size = 86016;*/
+
   while (ProgramConfig::keepRunning) {
     for (uint16_t i = startInd; i < endInd; i++) {
       // send the packets
-      uint8_t* pipeBuf =
-          (uint8_t*)pipes[i].txPipe->AllocateBuf(TX_BUFFER_MAX_SIZE);
-      if (pipeBuf == NULL) {
-        continue;
-      }
+      uint8_t* pipeBuf = pipes[i].txPipe->AllocateBuf(pipes[i].numAlignedBytes);
       memcpy(pipeBuf, pipes[i].buf, pipes[i].numAlignedBytes);
+      // now = get_ns_chrono();
+      // tokens_lc = std::min(now - last_checkpoint, buffer);
+      // tokens_lc += tokens;
+      // if (tokens_lc > buffer)
+      //     tokens_lc = buffer;
+      // tokens_lc -= (int64_t)(batch_size * 1000000000) / rate;
+      // if(tokens_lc >= 0) {
       pipes[i].txPipe->SendAndFree(pipes[i].numAlignedBytes);
       // update the stats
       stats[pipes[i].txPipe->id()].nb_bytes += pipes[i].numRawBytes;
       stats[pipes[i].txPipe->id()].nb_pkts += pipes[i].numPkts;
+      // last_checkpoint = now;
+      // tokens = tokens_lc;
+      // }
     }
   }
 }
@@ -118,7 +148,8 @@ int Client::startClient(const ClientConfig& config) {
             << "  Connections: " << config.numFlowsPerCore * config.numCores
             << "\n"
             << "  Cores: " << config.numCores << "\n"
-            << "  PCAP path: " << config.pcapPath << "\n";
+            << "  PCAP path: " << config.pcapPath << "\n"
+            << "  Timeout: " << config.timeout << "\n";
   std::vector<std::unique_ptr<Device>> devs(config.numCores);
   for (uint16_t i = 0; i < config.numCores; i++) {
     devs[i] = Device::Create(INTEL_FPGA_PCIE_BDF);
@@ -135,7 +166,8 @@ int Client::startClient(const ClientConfig& config) {
     return 2;
   }
 
-  struct PcapHandler context(devs, pcap, this, config.numFlowsPerCore);
+  struct PcapHandler context(devs, pcap, this, config.numFlowsPerCore,
+                             config.batchSize);
   std::vector<struct EnsoTxPipe>& txPipes = context.txPipes;
 
   if (pcap_loop(context.pcap, 0, Client::pcapPktHandler, (u_char*)&context) <
@@ -154,8 +186,8 @@ int Client::startClient(const ClientConfig& config) {
   }
 
   std::vector<std::thread> threads;
-  std::vector<enso::tx_stats_t> flowStats(config.numCores *
-                                          config.numFlowsPerCore);
+  uint16_t totalFlows = config.numCores * config.numFlowsPerCore;
+  std::vector<enso::tx_stats_t> flowStats(totalFlows);
 
   for (uint16_t coreId = 0; coreId < config.numCores; coreId++) {
     threads.emplace_back(&Client::runTx, this, std::ref(flowStats),
@@ -168,11 +200,26 @@ int Client::startClient(const ClientConfig& config) {
   }
 
   show_tx_flow_stats(flowStats, config.numCores * config.numFlowsPerCore,
-                     &ProgramConfig::keepRunning);
+                     &ProgramConfig::keepRunning, config.timeout);
 
   for (auto& thread : threads) {
     thread.join();
   }
 
+  // calculate final stats and put in a file
+  uint64_t totalBytes = 0;
+  uint64_t totalPkts = 0;
+  for (uint32_t i = 0; i < totalFlows; i++) {
+    totalBytes += flowStats[i].nb_bytes;
+    totalPkts += flowStats[i].nb_pkts;
+  }
+  std::ofstream statsFile("schedTxStats.csv");
+  statsFile << totalBytes << "," << totalPkts << std::endl;
+  statsFile.close();
+
+  // free all buffers
+  for (auto pipe : txPipes) {
+    free(pipe.buf);
+  }
   return 0;
 }

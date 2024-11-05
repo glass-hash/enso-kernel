@@ -35,6 +35,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <thread>
@@ -49,7 +50,7 @@
 #define FPGA_PACKET_OVERHEAD 20
 #define MIN_PACKET_SIZE 64
 #define DEFAULT_NB_QUEUES 4
-#define MAX_FLOWS 4096
+#define MAX_FLOWS 16384
 
 Server::Server(const ServerConfig& serverConfig) { startServer(serverConfig); }
 
@@ -104,7 +105,7 @@ void Server::runRx(enso::stats_t* stats, std::vector<uint64_t>& pktsPerFlow) {
 
 void Server::startServer(const ServerConfig& serverConfig) {
   std::cout << "Running in server mode with " << serverConfig.numFlows
-            << " connections" << std::endl;
+            << " connections." << std::endl;
 
   std::vector<enso::stats_t> threadStats(1);
   std::vector<uint64_t> pktsPerFlow(MAX_FLOWS);
@@ -112,15 +113,14 @@ void Server::startServer(const ServerConfig& serverConfig) {
   std::thread rxThread(&Server::runRx, this, &threadStats[0],
                        std::ref(pktsPerFlow));
   enso::set_core_id(rxThread, 0);
+
+  std::ofstream statsFile("schedRxStats.csv");
+  statsFile << "Mbps,Mpps,Bytes,Batches,Pkts,BytesPerBatch,PktsPerBatch"
+            << std::endl;
   enso::show_rx_flow_stats(pktsPerFlow, &threadStats[0], serverConfig.numFlows,
-                           &ProgramConfig::keepRunning);
+                           &ProgramConfig::keepRunning, statsFile);
 
   rxThread.join();
 
-  uint64_t totalPkts = 0;
-  for (uint16_t i = 0; i < serverConfig.numFlows; i++) {
-    std::cout << "Flow " << i << ": " << pktsPerFlow[i] << std::endl;
-    totalPkts += pktsPerFlow[i];
-  }
-  std::cout << "Total packets received: " << totalPkts << std::endl;
+  statsFile.close();
 }

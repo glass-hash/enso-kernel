@@ -143,11 +143,12 @@ void show_tx_stats(const std::vector<tx_stats_t>& thread_stats,
                    volatile bool* keep_running);
 
 void show_tx_flow_stats(const std::vector<tx_stats_t>& tx_flows,
-                        uint32_t flows_size, volatile bool* keep_running);
+                        uint32_t flows_size, volatile bool* keep_running,
+                        uint16_t timeout);
 
 void show_rx_flow_stats(const std::vector<uint64_t>& flow_stats,
                         const stats_t* rx_stats, uint32_t flow_stats_size,
-                        volatile bool* keep_running);
+                        volatile bool* keep_running, std::ofstream& statsFile);
 
 // Adapted from DPDK's rte_mov64() and rte_memcpy() functions.
 _enso_always_inline void mov64(uint8_t* dst, const uint8_t* src) {

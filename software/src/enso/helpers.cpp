@@ -39,7 +39,9 @@
 
 #include <enso/helpers.h>
 
+#include <csignal>
 #include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <thread>
 #include <vector>
@@ -140,6 +142,21 @@ int set_core_id(std::thread& thread, int core_id) {
                                 &cpuset);
 }
 
+void get_core_id() {
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  int s = pthread_getaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+  if (s != 0) {
+    std::cerr << "Getting core ID of thread failed" << std::endl;
+    return;
+  } else {
+    std::cout << "Valid cores:";
+    for (int j = 0; j < CPU_SETSIZE; j++)
+      if (CPU_ISSET(j, &cpuset)) std::cout << " " << j;
+    std::cout << std::endl;
+  }
+}
+
 static void print_stats_line(uint64_t recv_bytes, uint64_t nb_batches,
                              uint64_t nb_pkts, uint64_t delta_bytes,
                              uint64_t delta_pkts, uint64_t delta_batches) {
@@ -152,6 +169,29 @@ static void print_stats_line(uint64_t recv_bytes, uint64_t nb_batches,
     std::cout << "  " << delta_pkts / delta_batches << " pkt/batch";
   }
   std::cout << std::endl;
+}
+
+static void print_rx_stats_line(uint64_t recv_bytes, uint64_t nb_batches,
+                                uint64_t nb_pkts, uint64_t delta_bytes,
+                                uint64_t delta_pkts, uint64_t delta_batches,
+                                std::ofstream& statsFile) {
+  std::cout << std::dec << (delta_bytes + delta_pkts * 20) * 8. / 1e6
+            << " Mbps  " << delta_pkts / 1e6 << " Mpps  " << recv_bytes
+            << " B  " << nb_batches << " batches  " << nb_pkts << " pkts";
+
+  statsFile << std::dec << (delta_bytes + delta_pkts * 20) * 8. / 1e6 << ","
+            << delta_pkts / 1e6 << "," << recv_bytes << "," << nb_batches << ","
+            << nb_pkts;
+  if (delta_batches > 0) {
+    std::cout << "  " << delta_bytes / delta_batches << " B/batch";
+    std::cout << "  " << delta_pkts / delta_batches << " pkt/batch";
+    statsFile << "," << delta_bytes / delta_batches;
+    statsFile << "," << delta_pkts / delta_batches;
+  } else {
+    statsFile << ",0,0";
+  }
+  std::cout << std::endl;
+  statsFile << std::endl;
 }
 
 #define FPGA_PACKET_OVERHEAD 24
@@ -258,7 +298,7 @@ void show_stats(const std::vector<stats_t>& thread_stats,
 
 void show_rx_flow_stats(const std::vector<uint64_t>& flow_stats,
                         const stats_t* rx_stats, uint32_t flow_stats_size,
-                        volatile bool* keep_running) {
+                        volatile bool* keep_running, std::ofstream& statsFile) {
   std::vector<uint64_t> nb_pkts_before;
   std::vector<uint64_t> nb_pkts_after;
   nb_pkts_before.reserve(flow_stats_size);
@@ -304,9 +344,9 @@ void show_rx_flow_stats(const std::vector<uint64_t>& flow_stats,
       std::cout << "  Flow " << i << ":";
       std::cout << "    " << delta_pkts / ONE_THOUSAND << std::endl;
     }*/
-    print_stats_line(rx_stats->recv_bytes, rx_stats->nb_batches,
-                     rx_stats->nb_pkts, total_delta_bytes, total_delta_pkts,
-                     total_delta_batches);
+    print_rx_stats_line(rx_stats->recv_bytes, rx_stats->nb_batches,
+                        rx_stats->nb_pkts, total_delta_bytes, total_delta_pkts,
+                        total_delta_batches, statsFile);
     // std::cout << std::endl;
   }
 }
@@ -374,7 +414,8 @@ void show_tx_stats(const std::vector<tx_stats_t>& thread_stats,
 }
 
 void show_tx_flow_stats(const std::vector<tx_stats_t>& tx_flows,
-                        uint32_t flows_size, volatile bool* keep_running) {
+                        uint32_t flows_size, volatile bool* keep_running,
+                        uint16_t timeout) {
   std::vector<uint64_t> nb_bytes_before;
   std::vector<uint64_t> nb_pkts_before;
 
@@ -388,8 +429,11 @@ void show_tx_flow_stats(const std::vector<tx_stats_t>& tx_flows,
   nb_pkts_after.reserve(flows_size);
   uint64_t total_nb_bytes = 0;
   uint64_t total_nb_pkts = 0;
+  uint16_t cur_time = 0;
+  bool last_run = false;
 
-  while (*keep_running) {
+  while (*keep_running || last_run) {
+    last_run = false;
     uint64_t total_nb_bytes_before = 0;
     uint64_t total_nb_pkts_before = 0;
 
@@ -436,6 +480,11 @@ void show_tx_flow_stats(const std::vector<tx_stats_t>& tx_flows,
     // if (flows_size > 1) {
     //   std::cout << std::endl;
     // }
+    cur_time++;
+    if (cur_time == timeout) {
+      std::raise(SIGINT);
+      last_run = true;
+    }
   }
 }
 
