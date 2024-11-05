@@ -347,9 +347,9 @@ int Device::ApplyConfig(struct TxNotification* config_notification) {
 }
 
 void Device::Send(uint32_t tx_enso_pipe_id, uint64_t phys_addr,
-                  uint32_t nb_bytes) {
+                  uint32_t nb_bytes, uint32_t nb_pkts) {
   // keep sending until successful
-  while (send_to_queue(&notification_buf_pair_, phys_addr, nb_bytes,
+  while (send_to_queue(&notification_buf_pair_, phys_addr, nb_bytes, nb_pkts,
                        tx_enso_pipe_id) != 0) {
   }
   pending_completions += nb_bytes;

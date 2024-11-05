@@ -43,6 +43,7 @@
 #include <linux/fs.h>
 #include <linux/kernel.h>
 #include <linux/kthread.h>
+#include <linux/math64.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/printk.h>
@@ -82,11 +83,13 @@ struct enso_send_tx_pipe_params {
   uint64_t phys_addr;
   uint32_t len;
   uint32_t id;
+  uint32_t pkts;
 } __attribute__((packed));
 
 struct tx_send_ring_element {
   struct enso_send_tx_pipe_params ioctl_params;
   uint32_t notif_buf_id;
+  uint32_t line_len;
 } __attribute__((packed));
 
 /**
@@ -140,9 +143,12 @@ struct dev_bookkeep {
   uint32_t chr_open_cnt;
   uint32_t nb_fb_queues;
   uint32_t nb_tx_pipes;
+  uint64_t rate;
+  int64_t buffer;
+  uint32_t mult;
+  uint8_t shift;
   bool enable_rr;
   bool sched_run;
-  spinlock_t lock;
 };
 
 /**

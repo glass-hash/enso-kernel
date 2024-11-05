@@ -74,6 +74,7 @@ struct EnsoTxPipe {
   uint32_t numRawBytes;
   // Number of packets in the pipe
   uint32_t numPkts;
+  // Buffer with the packets
   uint8_t* buf;
 };
 

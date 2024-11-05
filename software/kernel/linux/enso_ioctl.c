@@ -34,6 +34,8 @@
 
 #include "enso_setup.h"
 
+#define ETH_PACKET_OVERHEAD 20
+
 /******************************************************************************
  * Static function prototypes
  *****************************************************************************/
@@ -785,6 +787,8 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
       stpp;
   notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_tail].notif_buf_id =
       notif_buf_pair->id;
+  notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_tail].line_len =
+      stpp.len + (stpp.pkts * ETH_PACKET_OVERHEAD);
   notif_buf_pair->tx_ring_tail =
       (notif_buf_pair->tx_ring_tail + 1) % NOTIFICATION_BUF_SIZE;
   return 0;
@@ -810,9 +814,7 @@ static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
   dev_bk = chr_dev_bk->dev_bk;
 
   // first we update the tx head
-  spin_lock(&dev_bk->lock);
   update_tx_head(notif_buf_pair);
-  spin_unlock(&dev_bk->lock);
   completions = notif_buf_pair->nb_unreported_completions;
   if (copy_to_user(user_addr, &completions, sizeof(completions))) {
     printk("couldn't copy information to user.");
@@ -895,9 +897,7 @@ static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
   // Block until we can send.
   while (unlikely(free_slots == 0)) {
     ++notif_buf_pair->tx_full_cnt;
-    spin_lock(&dev_bk->lock);
     update_tx_head(notif_buf_pair);
-    spin_unlock(&dev_bk->lock);
     free_slots =
         (notif_buf_pair->tx_head - tx_tail - 1) % NOTIFICATION_BUF_SIZE;
   }
@@ -914,9 +914,7 @@ static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
   nb_unreported_completions = notif_buf_pair->nb_unreported_completions;
   while (notif_buf_pair->nb_unreported_completions ==
          nb_unreported_completions) {
-    spin_lock(&dev_bk->lock);
     update_tx_head(notif_buf_pair);
-    spin_unlock(&dev_bk->lock);
   }
   notif_buf_pair->nb_unreported_completions = nb_unreported_completions;
 
@@ -1731,9 +1729,15 @@ int enso_sched(void *data) {
   uint32_t notif_buf_id = 0;
   uint32_t num_comp = 0;
   uint32_t pipe_id = 0;
-  uint32_t batch_size = 0;
+  uint32_t notif_buf_size_mask = NOTIFICATION_BUF_SIZE - 1;
 
-  printk("Starting enso_sched\n");
+  int64_t now = 0;
+  int64_t tokens_lc = 0;
+  int64_t last_checkpoint = ktime_get_ns();
+  int64_t tokens = dev_bk->buffer;
+
+  printk("Starting enso_sched. Tokens = %lld\n", tokens);
+  printk("mult = %u, shift = %u\n", dev_bk->mult, dev_bk->shift);
   while (!kthread_should_stop()) {
     // dequeue an element from the ring buffer and send it
     notif_buf_id = 0;
@@ -1744,23 +1748,42 @@ int enso_sched(void *data) {
           cur_batch =
               notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_head];
           pipe_id = cur_batch.ioctl_params.id;
-          batch_size = cur_batch.ioctl_params.len;
-          send_batch(notif_buf_pair, &cur_batch.ioctl_params);
-          // increment head
-          notif_buf_pair->tx_ring_head =
-              (notif_buf_pair->tx_ring_head + 1) % NOTIFICATION_BUF_SIZE;
-          // wait for the NIC to send it
-          while (num_comp == 0) {
-            // TODO(kshitij): make this call blocking and get rid of the
-            // num_comp variable
-            update_tx_head(notif_buf_pair);
-            num_comp = notif_buf_pair->nb_unreported_completions;
+
+          // TBF logic
+          now = ktime_get_ns();
+          // calculate the number of tokens since last checkpoint
+          tokens_lc = min_t(s64, now - last_checkpoint, dev_bk->buffer);
+          tokens_lc += tokens;
+          if (tokens_lc > dev_bk->buffer) tokens_lc = dev_bk->buffer;
+          // convert length to time and subtract those many number of tokens
+          // from tokens_lc
+          tokens_lc -=
+              (((int64_t)cur_batch.line_len * dev_bk->mult) >> dev_bk->shift);
+          // tokens_lc -= (int64_t)(cur_batch.line_len * NSEC_PER_SEC) /
+          // dev_bk->rate;
+
+          if (tokens_lc >= 0) {
+            send_batch(notif_buf_pair, &cur_batch.ioctl_params);
+            // increment head
+            notif_buf_pair->tx_ring_head =
+                (notif_buf_pair->tx_ring_head + 1) & notif_buf_size_mask;
+            // wait for the NIC to send it
+            while (num_comp == 0) {
+              // TODO(kshitij): make this call blocking and get rid of the
+              // num_comp variable
+              update_tx_head(notif_buf_pair);
+              num_comp = notif_buf_pair->nb_unreported_completions;
+            }
+            // reset completions to zero
+            notif_buf_pair->nb_unreported_completions = 0;
+            num_comp = 0;
+            // add it to the completions
+            atomic_add(cur_batch.ioctl_params.len,
+                       &dev_bk->tx_completions[pipe_id]);
+            // update scheduler related metrics
+            last_checkpoint = now;
+            tokens = tokens_lc;
           }
-          // reset completions to zero
-          notif_buf_pair->nb_unreported_completions = 0;
-          num_comp = 0;
-          // add it to the completions
-          atomic_add(batch_size, &dev_bk->tx_completions[pipe_id]);
         }
       } else {
         // assume that notification buffers are allocated sequentially

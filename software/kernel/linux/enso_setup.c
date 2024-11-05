@@ -40,6 +40,23 @@ struct enso_global_bookkeep global_bk __read_mostly;
 // function defined in `intel_fpga_pcie_setup.c` to get the BAR information
 extern struct enso_intel_pcie* get_intel_fpga_pcie_addr(void);
 
+static void sched_rate_precompute(uint64_t rate, uint32_t* mult,
+                                  uint8_t* shift) {
+  uint64_t factor = NSEC_PER_SEC;
+
+  *mult = 1;
+  *shift = 0;
+
+  if (rate <= 0) return;
+
+  for (;;) {
+    *mult = div64_u64(factor, rate);
+    if (*mult & (1U << 31) || factor & (1ULL << 63)) break;
+    factor <<= 1;
+    (*shift)++;
+  }
+}
+
 /******************************************************************************
  * Kernel Registration
  *****************************************************************************/
@@ -52,6 +69,7 @@ extern struct enso_intel_pcie* get_intel_fpga_pcie_addr(void);
 static __init int enso_init(void) {
   int ret, ind;
   struct dev_bookkeep* dev_bk;
+  uint64_t max_size;
 
   global_bk.intel_enso = NULL;
   global_bk.intel_enso = get_intel_fpga_pcie_addr();
@@ -112,11 +130,14 @@ static __init int enso_init(void) {
     goto failed_notif_buf_pair_alloc;
   }
 
-  spin_lock_init(&dev_bk->lock);
   dev_bk->enso_sched_thread = kthread_create(enso_sched, dev_bk, "enso_sched");
   kthread_bind(dev_bk->enso_sched_thread, SCHED_CORE_NUM);
   wake_up_process(dev_bk->enso_sched_thread);
   dev_bk->sched_run = true;
+  dev_bk->rate = 1250000000;
+  max_size = (uint64_t)((uint64_t)20 * 1024 * 1024 * 1024) / 8;
+  dev_bk->buffer = (int64_t)(max_size * NSEC_PER_SEC) / dev_bk->rate;
+  sched_rate_precompute(dev_bk->rate, &dev_bk->mult, &dev_bk->shift);
   global_bk.dev_bk = dev_bk;
 
   return 0;
@@ -151,6 +172,7 @@ static void enso_exit(void) {
   kfree(global_bk.dev_bk->notif_q_status);
   kfree(global_bk.dev_bk);
 }
+
 module_exit(enso_exit);
 
 MODULE_LICENSE("GPL");

@@ -57,7 +57,7 @@ using enso::Device;
 using enso::TxPipe;
 
 // structure for libpcap
-struct PcapHandler {
+struct PcapPktHandler {
   pcap_t *pcap;
   uint8_t *buf;
   uint32_t bytes_copied;
@@ -96,7 +96,7 @@ void int_handler(int signal __attribute__((unused))) { run = 0; }
 void pcap_pkt_handler(u_char *user, const struct pcap_pkthdr *pkt_hdr,
                       const u_char *pkt_bytes) {
   (void)pkt_hdr;
-  struct PcapHandler *context = (struct PcapHandler *)user;
+  struct PcapPktHandler *context = (struct PcapPktHandler *)user;
 
   const struct ether_header *l2_hdr = (struct ether_header *)pkt_bytes;
   if (l2_hdr->ether_type != htons(ETHERTYPE_IP)) {
@@ -130,7 +130,7 @@ void init_buffer_with_packets(uint8_t *buf, uint64_t &total_bytes,
     return;
   }
 
-  struct PcapHandler context;
+  struct PcapPktHandler context;
   context.buf = buf;
   context.pcap = pcap;
   context.bytes_copied = 0;
@@ -181,7 +181,7 @@ void send_tx(TxPipe *pipe, uint8_t *main_buf, uint64_t total_bytes_in_main_buf,
     // copy the packets from the main buffer in the pipe
     memcpy(pipe_buf, main_buf, total_bytes_in_main_buf);
     // send the packets
-    pipe->SendAndFree(total_bytes_in_main_buf);
+    pipe->SendAndFree(total_bytes_in_main_buf, total_pkts_in_main_buf);
     // update the stats
     stats->bytes += total_good_bytes_in_main_buf;
     stats->pkts += total_pkts_in_main_buf;

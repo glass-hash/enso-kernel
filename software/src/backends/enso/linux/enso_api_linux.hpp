@@ -48,6 +48,7 @@ struct enso_send_tx_pipe_params {
   uint64_t phys_addr;
   uint32_t len;
   uint32_t id;
+  uint32_t pkts;
 } __attribute__((packed));
 
 struct enso_pipe_init_params {

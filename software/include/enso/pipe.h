@@ -346,8 +346,10 @@ class Device {
    * @param tx_enso_pipe_id The ID of the TxPipe.
    * @param phys_addr The physical address of the buffer region to send.
    * @param nb_bytes The number of bytes to send.
+   * @param nb_pkts The number of packets to send.
    */
-  void Send(uint32_t tx_enso_pipe_id, uint64_t phys_addr, uint32_t nb_bytes);
+  void Send(uint32_t tx_enso_pipe_id, uint64_t phys_addr, uint32_t nb_bytes,
+            uint32_t nb_pkts);
 
   /**
    * @brief Frees a Tx Pipe's ID. Called during destruction of a TxPipe object.
@@ -865,15 +867,16 @@ class TxPipe {
    *
    * @param nb_bytes The number of bytes to send. Must be a multiple of
    *                 `kQuantumSize`.
+   * @param nb_pkts The number of pkts to be sent.
    */
-  inline void SendAndFree(uint32_t nb_bytes) {
+  inline void SendAndFree(uint32_t nb_bytes, uint32_t nb_pkts) {
     uint64_t phys_addr = buf_phys_addr_ + app_begin_;
     assert(nb_bytes <= kMaxCapacity);
     assert(nb_bytes / kQuantumSize * kQuantumSize == nb_bytes);
 
     app_begin_ = (app_begin_ + nb_bytes) & kBufMask;
 
-    device_->Send(kId, phys_addr, nb_bytes);
+    device_->Send(kId, phys_addr, nb_bytes, nb_pkts);
   }
 
   /**
@@ -1195,7 +1198,8 @@ class RxTxPipe {
    * @param nb_bytes The number of bytes to send.
    */
   inline void SendAndFree(uint32_t nb_bytes) {
-    tx_pipe_->SendAndFree(nb_bytes);
+    // TODO(kshitij): Fix this with the new API required for TBF
+    tx_pipe_->SendAndFree(nb_bytes, 0);
     last_tx_pipe_capacity_ -= nb_bytes;
   }
 

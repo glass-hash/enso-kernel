@@ -125,7 +125,7 @@ void run_forward(uint32_t nb_queues, enso::stats_t* stats) {
 
     rx_pipe->Clear();
 
-    tx_pipe->SendAndFree(batch_length);
+    tx_pipe->SendAndFree(batch_length, 0);
   }
 }
 

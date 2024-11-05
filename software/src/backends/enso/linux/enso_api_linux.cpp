@@ -148,12 +148,13 @@ int EnsoDev::alloc_notif_buffer(int id) {
   return result;
 }
 
-int EnsoDev::send_tx_pipe(uint64_t phys_addr, uint32_t len,
+int EnsoDev::send_tx_pipe(uint64_t phys_addr, uint32_t len, uint32_t pkts,
                           uint32_t tx_pipe_id) {
   int result;
   struct enso_send_tx_pipe_params stpp;
   stpp.phys_addr = phys_addr;
   stpp.len = len;
+  stpp.pkts = pkts;
   stpp.id = tx_pipe_id;
   result = ioctl(m_dev_handle, ENSO_IOCTL_SEND_TX_PIPE, &stpp);
 

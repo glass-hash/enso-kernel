@@ -132,7 +132,7 @@ void Client::runTx(std::vector<enso::tx_stats_t>& stats,
       //     tokens_lc = buffer;
       // tokens_lc -= (int64_t)(batch_size * 1000000000) / rate;
       // if(tokens_lc >= 0) {
-      pipes[i].txPipe->SendAndFree(pipes[i].numAlignedBytes);
+      pipes[i].txPipe->SendAndFree(pipes[i].numAlignedBytes, pipes[i].numPkts);
       // update the stats
       stats[pipes[i].txPipe->id()].nb_bytes += pipes[i].numRawBytes;
       stats[pipes[i].txPipe->id()].nb_pkts += pipes[i].numPkts;
