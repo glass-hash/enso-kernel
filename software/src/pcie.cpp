@@ -292,4 +292,11 @@ uint32_t get_pipe_completions(struct NotificationBufPair* notification_buf_pair,
   return enso_dev->GetPipeCompletions(tx_pipe_id);
 }
 
+int set_tbf_params(struct NotificationBufPair* notification_buf_pair,
+                   uint8_t rate, uint8_t burst) {
+  EnsoBackend* enso_dev =
+      static_cast<EnsoBackend*>(notification_buf_pair->fpga_dev);
+  return enso_dev->SetTBFParams(rate, burst);
+}
+
 }  // namespace enso

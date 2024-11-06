@@ -413,4 +413,8 @@ void Device::FreeTxPipeID(uint32_t pipe_id) {
   enso_tx_pipe_free(&notification_buf_pair_, pipe_id);
 }
 
+int Device::SetTBFParams(uint8_t rate, uint8_t burst) {
+  return set_tbf_params(&notification_buf_pair_, rate, burst);
+}
+
 }  // namespace enso

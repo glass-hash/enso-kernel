@@ -286,4 +286,17 @@ uint32_t EnsoDev::get_pipe_completions(uint32_t pipe_id) {
   return result;
 }
 
+int EnsoDev::set_tbf_params(uint8_t rate, uint8_t burst) {
+  struct enso_tbf_rate_params params;
+  int result;
+  params.rate = rate;
+  params.burst = burst;
+  result = ioctl(m_dev_handle, ENSO_IOCTL_SET_TBF_RATE, &params);
+  if (result < 0) {
+    std::cerr << "set tbf params failed" << std::endl;
+    return -1;
+  }
+  return result;
+}
+
 }  // namespace enso_api

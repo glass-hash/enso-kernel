@@ -145,6 +145,9 @@ struct dev_bookkeep {
   uint32_t nb_tx_pipes;
   uint64_t rate;
   int64_t buffer;
+  int64_t last_ckpt;
+  int64_t tokens_lc;
+  int64_t tokens;
   uint32_t mult;
   uint8_t shift;
   bool enable_rr;

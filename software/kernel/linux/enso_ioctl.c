@@ -81,6 +81,8 @@ static long free_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
                             unsigned long uarg);
 static long get_pipe_completions(struct chr_dev_bookkeep *chr_dev_bk,
                                  unsigned long uarg);
+static long set_tbf_rate(struct dev_bookkeep *dev_bk,
+                         unsigned int __user *user_addr);
 
 /* Helpers */
 static void free_rx_tx_buf(struct chr_dev_bookkeep *chr_dev_bk);
@@ -96,6 +98,8 @@ void enso_io_write_32(uint32_t data, void *addr);
 uint32_t enso_io_read_32(void *addr);
 static int send_batch(struct notification_buf_pair *notif_buf_pair,
                       struct enso_send_tx_pipe_params *stpp);
+static void sched_rate_precompute(uint64_t rate, uint32_t *mult,
+                                  uint8_t *shift);
 
 /******************************************************************************
  * Device and I/O control function
@@ -321,6 +325,14 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
       break;
     case ENSO_IOCTL_GET_PIPE_COMPLETIONS:
       retval = get_pipe_completions(chr_dev_bk, uarg);
+      break;
+    case ENSO_IOCTL_SET_TBF_RATE:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
+      retval = set_tbf_rate(dev_bk, (unsigned int __user *)uarg);
+      up(&dev_bk->sem);
       break;
     default:
       retval = -ENOTTY;
@@ -1350,6 +1362,29 @@ static long free_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
   return 0;
 }
 
+static long set_tbf_rate(struct dev_bookkeep *dev_bk,
+                         unsigned int __user *user_addr) {
+  struct enso_tbf_rate_params params;
+  uint64_t max_burst_size;
+
+  if (copy_from_user(&params, user_addr, sizeof(params))) {
+    printk("couldn't copy params information from user.");
+    return -EFAULT;
+  }
+  printk("Setting rate to %u, and burst to %u\n", params.rate, params.burst);
+  // rate is in bytes per second
+  dev_bk->rate = ((uint64_t)params.rate * 1000000000) / 8;
+  max_burst_size = (uint64_t)((uint64_t)params.burst * 1024 * 1024 * 1024) / 8;
+  dev_bk->buffer = (int64_t)(max_burst_size * NSEC_PER_SEC) / dev_bk->rate;
+  dev_bk->last_ckpt = ktime_get_ns();
+  // tokens available intially are equal to the size of the buffer
+  dev_bk->tokens = dev_bk->buffer;
+  printk("Rate is %llu, buffer is %lld\n", dev_bk->rate, dev_bk->buffer);
+
+  sched_rate_precompute(dev_bk->rate, &dev_bk->mult, &dev_bk->shift);
+  return 0;
+}
+
 /******************************************************************************
  * Helper functions
  *****************************************************************************/
@@ -1722,6 +1757,23 @@ int send_batch(struct notification_buf_pair *notif_buf_pair,
   return 0;
 }
 
+static void sched_rate_precompute(uint64_t rate, uint32_t *mult,
+                                  uint8_t *shift) {
+  uint64_t factor = NSEC_PER_SEC;
+
+  *mult = 1;
+  *shift = 0;
+
+  if (rate <= 0) return;
+
+  for (;;) {
+    *mult = div64_u64(factor, rate);
+    if (*mult & (1U << 31) || factor & (1ULL << 63)) break;
+    factor <<= 1;
+    (*shift)++;
+  }
+}
+
 int enso_sched(void *data) {
   struct dev_bookkeep *dev_bk = (struct dev_bookkeep *)data;
   struct notification_buf_pair *notif_buf_pair = NULL;
@@ -1732,12 +1784,8 @@ int enso_sched(void *data) {
   uint32_t notif_buf_size_mask = NOTIFICATION_BUF_SIZE - 1;
 
   int64_t now = 0;
-  int64_t tokens_lc = 0;
-  int64_t last_checkpoint = ktime_get_ns();
-  int64_t tokens = dev_bk->buffer;
 
-  printk("Starting enso_sched. Tokens = %lld\n", tokens);
-  printk("mult = %u, shift = %u\n", dev_bk->mult, dev_bk->shift);
+  printk("Starting enso_sched\n");
   while (!kthread_should_stop()) {
     // dequeue an element from the ring buffer and send it
     notif_buf_id = 0;
@@ -1752,17 +1800,19 @@ int enso_sched(void *data) {
           // TBF logic
           now = ktime_get_ns();
           // calculate the number of tokens since last checkpoint
-          tokens_lc = min_t(s64, now - last_checkpoint, dev_bk->buffer);
-          tokens_lc += tokens;
-          if (tokens_lc > dev_bk->buffer) tokens_lc = dev_bk->buffer;
+          dev_bk->tokens_lc =
+              min_t(s64, now - dev_bk->last_ckpt, dev_bk->buffer);
+          dev_bk->tokens_lc += dev_bk->tokens;
+          if (dev_bk->tokens_lc > dev_bk->buffer)
+            dev_bk->tokens_lc = dev_bk->buffer;
           // convert length to time and subtract those many number of tokens
           // from tokens_lc
-          tokens_lc -=
+          dev_bk->tokens_lc -=
               (((int64_t)cur_batch.line_len * dev_bk->mult) >> dev_bk->shift);
           // tokens_lc -= (int64_t)(cur_batch.line_len * NSEC_PER_SEC) /
           // dev_bk->rate;
 
-          if (tokens_lc >= 0) {
+          if (dev_bk->tokens_lc >= 0) {
             send_batch(notif_buf_pair, &cur_batch.ioctl_params);
             // increment head
             notif_buf_pair->tx_ring_head =
@@ -1781,8 +1831,8 @@ int enso_sched(void *data) {
             atomic_add(cur_batch.ioctl_params.len,
                        &dev_bk->tx_completions[pipe_id]);
             // update scheduler related metrics
-            last_checkpoint = now;
-            tokens = tokens_lc;
+            dev_bk->last_ckpt = now;
+            dev_bk->tokens = dev_bk->tokens_lc;
           }
         }
       } else {

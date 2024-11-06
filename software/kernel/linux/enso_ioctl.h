@@ -56,6 +56,11 @@ struct enso_advance_pipe_params {
   size_t len;
 };
 
+struct enso_tbf_rate_params {
+  uint8_t rate;
+  uint8_t burst;
+};
+
 #define ENSO_IOCTL_MAGIC 0x07
 #define ENSO_IOCTL_TEST _IOR(ENSO_IOCTL_MAGIC, 0, unsigned int)
 #define ENSO_IOCTL_GET_NB_FALLBACK_QUEUES \
@@ -87,7 +92,8 @@ struct enso_advance_pipe_params {
 #define ENSO_IOCTL_ALLOC_TX_PIPE_ID _IOR(ENSO_IOCTL_MAGIC, 19, int *)
 #define ENSO_IOCTL_FREE_TX_PIPE_ID _IOW(ENSO_IOCTL_MAGIC, 20, unsigned int)
 #define ENSO_IOCTL_GET_PIPE_COMPLETIONS _IOW(ENSO_IOCTL_MAGIC, 21, unsigned int)
-#define ENSO_IOCTL_MAXNR 21
+#define ENSO_IOCTL_SET_TBF_RATE _IOW(ENSO_IOCTL_MAGIC, 22, unsigned int *)
+#define ENSO_IOCTL_MAXNR 22
 
 long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
                          unsigned long arg);

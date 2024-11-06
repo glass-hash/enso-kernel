@@ -85,6 +85,7 @@ class EnsoDev {
   int alloc_tx_pipe_id();
   int free_tx_pipe_id(int pipe_id);
   uint32_t get_pipe_completions(uint32_t pipe_id);
+  int set_tbf_params(uint8_t rate, uint8_t burst);
 
  private:
   /**

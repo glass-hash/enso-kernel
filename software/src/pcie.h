@@ -216,6 +216,9 @@ void fully_advance_pipe_kernel(
 uint32_t get_pipe_completions(struct NotificationBufPair* notification_buf_pair,
                               uint32_t tx_pipe_id);
 
+int set_tbf_params(struct NotificationBufPair* notification_buf_pair,
+                   uint8_t rate, uint8_t burst);
+
 }  // namespace enso
 
 #endif  // SOFTWARE_SRC_PCIE_H_

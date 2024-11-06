@@ -49,6 +49,8 @@ struct ClientConfig {
   std::string pcapPath;
   uint16_t timeout;
   uint32_t batchSize;
+  uint8_t rate;
+  uint8_t burst;
 };
 
 struct ServerConfig {

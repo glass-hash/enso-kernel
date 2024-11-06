@@ -288,6 +288,10 @@ class EnsoBackend {
     return dev_->get_pipe_completions(pipe_id);
   }
 
+  int SetTBFParams(uint8_t rate, uint8_t burst) {
+    return dev_->set_tbf_params(rate, burst);
+  }
+
  private:
   EnsoBackend() noexcept {}
 

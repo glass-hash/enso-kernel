@@ -159,6 +159,13 @@ int Client::startClient(const ClientConfig& config) {
     }
   }
 
+  // use the first device to configure the TBF
+  int ret = devs[0]->SetTBFParams(config.rate, config.burst);
+  if (ret != 0) {
+    std::cerr << "Unable to set TBF params" << std::endl;
+    exit(2);
+  }
+
   char errbuf[PCAP_ERRBUF_SIZE];
   pcap_t* pcap = pcap_open_offline(config.pcapPath.c_str(), errbuf);
   if (pcap == NULL) {

@@ -98,6 +98,7 @@ class Device {
 
   ~Device();
 
+  int SetTBFParams(uint8_t rate, uint8_t burst);
   /**
    * @brief Allocates an RX pipe.
    *
