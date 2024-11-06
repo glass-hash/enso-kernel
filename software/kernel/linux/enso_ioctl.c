@@ -737,15 +737,6 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   enso_io_write_32((uint32_t)(rx_buf_phys_addr >> 32),
                    &nbp_q_regs->tx_mem_high);
 
-  notif_buf_pair->tx_send_ring = kzalloc(
-      NOTIFICATION_BUF_SIZE * sizeof(struct tx_send_ring_element), GFP_KERNEL);
-  if (notif_buf_pair->tx_send_ring == NULL) {
-    printk("couldn't create send ring buffer\n");
-    return -ENOMEM;
-  }
-  notif_buf_pair->tx_ring_head = 0;
-  notif_buf_pair->tx_ring_tail = 0;
-
   // update the notification buffer pair in dev_bk
   dev_bk->notif_buf_pairs[notif_buf_pair->id] = notif_buf_pair;
   return 0;
@@ -765,7 +756,9 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
 static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                          unsigned long uarg) {
   struct enso_send_tx_pipe_params stpp;
+  struct dev_bookkeep *dev_bk = chr_dev_bk->dev_bk;
   struct notification_buf_pair *notif_buf_pair = chr_dev_bk->notif_buf_pair;
+  uint32_t num_comp = 0;
   if (copy_from_user(&stpp, (void __user *)uarg, sizeof(stpp))) {
     printk("couldn't copy arg from user.");
     return -EFAULT;
@@ -776,17 +769,18 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     return -EFAULT;
   }
 
-  if (((notif_buf_pair->tx_ring_tail + 1) % NOTIFICATION_BUF_SIZE) ==
-      notif_buf_pair->tx_ring_head) {
-    // buffer is full
-    return -1;
+  send_batch(notif_buf_pair, &stpp);
+  // wait for the NIC to send it
+  while (num_comp == 0) {
+    // TODO(kshitij): make this call blocking and get rid of the
+    // num_comp variable
+    update_tx_head(notif_buf_pair);
+    num_comp = notif_buf_pair->nb_unreported_completions;
   }
-  notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_tail].ioctl_params =
-      stpp;
-  notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_tail].notif_buf_id =
-      notif_buf_pair->id;
-  notif_buf_pair->tx_ring_tail =
-      (notif_buf_pair->tx_ring_tail + 1) % NOTIFICATION_BUF_SIZE;
+  // reset completions to zero
+  notif_buf_pair->nb_unreported_completions = 0;
+  // add it to the completions
+  atomic_add(stpp.len, &dev_bk->tx_completions[stpp.id]);
   return 0;
 }
 
@@ -810,9 +804,7 @@ static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
   dev_bk = chr_dev_bk->dev_bk;
 
   // first we update the tx head
-  spin_lock(&dev_bk->lock);
   update_tx_head(notif_buf_pair);
-  spin_unlock(&dev_bk->lock);
   completions = notif_buf_pair->nb_unreported_completions;
   if (copy_to_user(user_addr, &completions, sizeof(completions))) {
     printk("couldn't copy information to user.");
@@ -895,9 +887,7 @@ static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
   // Block until we can send.
   while (unlikely(free_slots == 0)) {
     ++notif_buf_pair->tx_full_cnt;
-    spin_lock(&dev_bk->lock);
     update_tx_head(notif_buf_pair);
-    spin_unlock(&dev_bk->lock);
     free_slots =
         (notif_buf_pair->tx_head - tx_tail - 1) % NOTIFICATION_BUF_SIZE;
   }
@@ -914,9 +904,7 @@ static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
   nb_unreported_completions = notif_buf_pair->nb_unreported_completions;
   while (notif_buf_pair->nb_unreported_completions ==
          nb_unreported_completions) {
-    spin_lock(&dev_bk->lock);
     update_tx_head(notif_buf_pair);
-    spin_unlock(&dev_bk->lock);
   }
   notif_buf_pair->nb_unreported_completions = nb_unreported_completions;
 
@@ -1721,55 +1709,5 @@ int send_batch(struct notification_buf_pair *notif_buf_pair,
 
   notif_buf_pair->tx_tail = tx_tail;
   enso_io_write_32(tx_tail, notif_buf_pair->tx_tail_ptr);
-  return 0;
-}
-
-int enso_sched(void *data) {
-  struct dev_bookkeep *dev_bk = (struct dev_bookkeep *)data;
-  struct notification_buf_pair *notif_buf_pair = NULL;
-  struct tx_send_ring_element cur_batch;
-  uint32_t notif_buf_id = 0;
-  uint32_t num_comp = 0;
-  uint32_t pipe_id = 0;
-  uint32_t batch_size = 0;
-
-  printk("Starting enso_sched\n");
-  while (!kthread_should_stop()) {
-    // dequeue an element from the ring buffer and send it
-    notif_buf_id = 0;
-    while (notif_buf_id < MAX_NB_APPS) {
-      notif_buf_pair = dev_bk->notif_buf_pairs[notif_buf_id];
-      if (notif_buf_pair) {
-        if (notif_buf_pair->tx_ring_head != notif_buf_pair->tx_ring_tail) {
-          cur_batch =
-              notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_head];
-          pipe_id = cur_batch.ioctl_params.id;
-          batch_size = cur_batch.ioctl_params.len;
-          send_batch(notif_buf_pair, &cur_batch.ioctl_params);
-          // increment head
-          notif_buf_pair->tx_ring_head =
-              (notif_buf_pair->tx_ring_head + 1) % NOTIFICATION_BUF_SIZE;
-          // wait for the NIC to send it
-          while (num_comp == 0) {
-            // TODO(kshitij): make this call blocking and get rid of the
-            // num_comp variable
-            update_tx_head(notif_buf_pair);
-            num_comp = notif_buf_pair->nb_unreported_completions;
-          }
-          // reset completions to zero
-          notif_buf_pair->nb_unreported_completions = 0;
-          num_comp = 0;
-          // add it to the completions
-          atomic_add(batch_size, &dev_bk->tx_completions[pipe_id]);
-        }
-      } else {
-        // assume that notification buffers are allocated sequentially
-        break;
-      }
-      notif_buf_id++;
-    }
-    yield();
-  }
-  printk("enso_sched exiting\n");
   return 0;
 }

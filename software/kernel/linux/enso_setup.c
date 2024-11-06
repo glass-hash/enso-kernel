@@ -112,11 +112,6 @@ static __init int enso_init(void) {
     goto failed_notif_buf_pair_alloc;
   }
 
-  spin_lock_init(&dev_bk->lock);
-  dev_bk->enso_sched_thread = kthread_create(enso_sched, dev_bk, "enso_sched");
-  kthread_bind(dev_bk->enso_sched_thread, SCHED_CORE_NUM);
-  wake_up_process(dev_bk->enso_sched_thread);
-  dev_bk->sched_run = true;
   global_bk.dev_bk = dev_bk;
 
   return 0;
@@ -139,9 +134,6 @@ module_init(enso_init);
  * @brief: Unregisters the Enso driver.
  * */
 static void enso_exit(void) {
-  if (global_bk.dev_bk->sched_run) {
-    kthread_stop(global_bk.dev_bk->enso_sched_thread);
-  }
   enso_chr_exit();
   global_bk.intel_enso = NULL;
   kfree(global_bk.dev_bk->notif_buf_pairs);

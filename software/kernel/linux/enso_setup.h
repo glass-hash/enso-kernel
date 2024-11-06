@@ -58,7 +58,6 @@
 #define HUGE_PAGE_SIZE (0x1ULL << 21)
 #define MEM_PER_QUEUE (0x1ULL << 12)
 #define BATCH_SIZE 64
-#define SCHED_CORE_NUM 4
 
 // These determine the maximum number of notification buffers and enso pipes.
 // These macros also exist in hardware and **must be kept in sync**. Update the
@@ -135,14 +134,11 @@ struct dev_bookkeep {
   uint8_t *rx_pipe_id_status;
   uint8_t *tx_pipe_id_status;
   atomic_t *tx_completions;
-  struct task_struct *enso_sched_thread;
   struct notification_buf_pair **notif_buf_pairs;
   uint32_t chr_open_cnt;
   uint32_t nb_fb_queues;
   uint32_t nb_tx_pipes;
   bool enable_rr;
-  bool sched_run;
-  spinlock_t lock;
 };
 
 /**
@@ -276,7 +272,6 @@ struct notification_buf_pair {
   uint32_t *next_rx_pipe_ids;
   uint8_t *wrap_tracker;
   uint32_t *pending_rx_pipe_tails;
-  struct tx_send_ring_element *tx_send_ring;
 
   uint64_t tx_full_cnt;
 
@@ -288,8 +283,6 @@ struct notification_buf_pair {
 
   uint16_t next_rx_ids_head;
   uint16_t next_rx_ids_tail;
-  uint16_t tx_ring_head;
-  uint16_t tx_ring_tail;
 };
 
 /**
