@@ -80,6 +80,7 @@ struct enso_intel_pcie {
 struct enso_send_tx_pipe_params {
   uint64_t phys_addr;
   uint32_t len;
+  uint32_t pkts;
   uint32_t id;
 } __attribute__((packed));
 
@@ -135,9 +136,16 @@ struct dev_bookkeep {
   uint8_t *tx_pipe_id_status;
   atomic_t *tx_completions;
   struct notification_buf_pair **notif_buf_pairs;
+  uint64_t rate;
+  int64_t buffer;
+  int64_t last_ckpt;
+  int64_t tokens_lc;
+  int64_t tokens;
+  uint32_t mult;
   uint32_t chr_open_cnt;
   uint32_t nb_fb_queues;
   uint32_t nb_tx_pipes;
+  uint8_t shift;
   bool enable_rr;
 };
 

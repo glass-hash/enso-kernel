@@ -132,7 +132,7 @@ void Client::runTx(std::vector<enso::tx_stats_t>& stats,
       //     tokens_lc = buffer;
       // tokens_lc -= (int64_t)(batch_size * 1000000000) / rate;
       // if(tokens_lc >= 0) {
-      pipes[i].txPipe->SendAndFree(pipes[i].numAlignedBytes);
+      pipes[i].txPipe->SendAndFree(pipes[i].numAlignedBytes, pipes[i].numPkts);
       // update the stats
       stats[pipes[i].txPipe->id()].nb_bytes += pipes[i].numRawBytes;
       stats[pipes[i].txPipe->id()].nb_pkts += pipes[i].numPkts;
@@ -157,6 +157,13 @@ int Client::startClient(const ClientConfig& config) {
       std::cerr << "Problem creating device" << std::endl;
       exit(2);
     }
+  }
+
+  // use the first device to configure the TBF
+  int ret = devs[0]->SetTBFParams(config.rate, config.burst);
+  if (ret != 0) {
+    std::cerr << "Unable to set TBF params" << std::endl;
+    exit(2);
   }
 
   char errbuf[PCAP_ERRBUF_SIZE];

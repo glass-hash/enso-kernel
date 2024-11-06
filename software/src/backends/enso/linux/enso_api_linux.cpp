@@ -148,12 +148,13 @@ int EnsoDev::alloc_notif_buffer(int id) {
   return result;
 }
 
-int EnsoDev::send_tx_pipe(uint64_t phys_addr, uint32_t len,
+int EnsoDev::send_tx_pipe(uint64_t phys_addr, uint32_t len, uint32_t pkts,
                           uint32_t tx_pipe_id) {
   int result;
   struct enso_send_tx_pipe_params stpp;
   stpp.phys_addr = phys_addr;
   stpp.len = len;
+  stpp.pkts = pkts;
   stpp.id = tx_pipe_id;
   result = ioctl(m_dev_handle, ENSO_IOCTL_SEND_TX_PIPE, &stpp);
 
@@ -270,6 +271,19 @@ int EnsoDev::alloc_tx_pipe_id() {
 int EnsoDev::free_tx_pipe_id(int pipe_id) {
   int result;
   result = ioctl(m_dev_handle, ENSO_IOCTL_FREE_TX_PIPE_ID, pipe_id);
+  return result;
+}
+
+int EnsoDev::set_tbf_params(uint8_t rate, uint8_t burst) {
+  struct enso_tbf_rate_params params;
+  params.rate = rate;
+  params.burst = burst;
+
+  int result;
+  result = ioctl(m_dev_handle, ENSO_IOCTL_SET_TBF_RATE, &params);
+  if (result < 0) {
+    return -1;
+  }
   return result;
 }
 

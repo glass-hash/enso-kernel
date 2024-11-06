@@ -38,6 +38,8 @@
 #include <iostream>
 #include <string>
 
+#define MAX_BATCH_SIZE 131072
+
 volatile bool ProgramConfig::keepRunning = true;
 
 void ProgramConfig::sigintHandler(int signal __attribute__((unused))) {
@@ -53,8 +55,10 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
   config.mode = Mode::Unknown;
   uint16_t timeoutVal = 0;
   uint32_t batchSize = 0;
+  uint8_t rate = 0;
+  uint8_t burst = 0;
 
-  while ((opt = getopt(argc, argv, "s:c:t:b:")) != -1) {
+  while ((opt = getopt(argc, argv, "s:c:t:b:z:x:")) != -1) {
     switch (opt) {
       case 's':
         if (config.mode != Mode::Unknown) {
@@ -96,10 +100,18 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
 
       case 'b':
         batchSize = atoi(optarg);
-        if ((batchSize == 0) || (batchSize > 131072)) {
+        if ((batchSize == 0) || (batchSize > MAX_BATCH_SIZE)) {
           std::cerr << "Invalid batch size value" << std::endl;
           return false;
         }
+        break;
+
+      case 'z':
+        rate = (uint8_t)strtoul(optarg, NULL, 0);
+        break;
+
+      case 'x':
+        burst = (uint8_t)strtoul(optarg, NULL, 0);
         break;
 
       case '?':
@@ -113,6 +125,8 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
   if (config.mode == Mode::Client) {
     // Need at least 2 more arguments (cores and pcap path)
     config.clientConfig.timeout = timeoutVal;
+    config.clientConfig.rate = rate;
+    config.clientConfig.burst = burst;
     if (optind + 1 >= argc) {
       std::cerr << "Error: Client mode requires <num-cores> and <pcap-path>"
                 << std::endl;
@@ -125,14 +139,35 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
       return false;
     }
 
+    if (config.clientConfig.rate == 0) {
+      std::cerr << "Error: Client must mention a rate for TBF config"
+                << std::endl;
+      return false;
+    }
+
+    if (config.clientConfig.burst == 0) {
+      std::cerr << "Error: Client must mention a burst size for TBF config"
+                << std::endl;
+      return false;
+    }
+
     config.clientConfig.pcapPath = argv[optind + 1];
-    config.clientConfig.batchSize = (batchSize == 0) ? 131072 : batchSize;
+    config.clientConfig.batchSize =
+        (batchSize == 0) ? MAX_BATCH_SIZE : batchSize;
     optind += 2;
 
   } else if (config.mode == Mode::Server) {
     // Server mode shouldn't have any additional arguments
     if (batchSize != 0) {
       std::cerr << "Error: Server mode cannot have batch size" << std::endl;
+      return false;
+    }
+    if (rate != 0) {
+      std::cerr << "Error: Server mode cannot have rate param" << std::endl;
+      return false;
+    }
+    if (burst != 0) {
+      std::cerr << "Error: Server mode cannot have burst param" << std::endl;
       return false;
     }
     if (optind < argc) {

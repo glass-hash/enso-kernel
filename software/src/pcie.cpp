@@ -174,16 +174,18 @@ void prefetch_pipe(struct RxEnsoPipeInternal* enso_pipe,
   enso_dev->PrefetchPipe(enso_pipe->id);
 }
 
-static _enso_always_inline uint32_t
-__send_to_queue(struct NotificationBufPair* notification_buf_pair,
-                uint64_t phys_addr, uint32_t len, uint32_t tx_pipe_id) {
+static _enso_always_inline int __send_to_queue(
+    struct NotificationBufPair* notification_buf_pair, uint64_t phys_addr,
+    uint32_t len, uint32_t pkts, uint32_t tx_pipe_id) {
   EnsoBackend* enso_dev = (EnsoBackend*)notification_buf_pair->fpga_dev;
-  return enso_dev->SendTxPipe(phys_addr, len, tx_pipe_id);
+  return enso_dev->SendTxPipe(phys_addr, len, pkts, tx_pipe_id);
 }
 
-uint32_t send_to_queue(struct NotificationBufPair* notification_buf_pair,
-                       uint64_t phys_addr, uint32_t len, uint32_t tx_pipe_id) {
-  return __send_to_queue(notification_buf_pair, phys_addr, len, tx_pipe_id);
+int send_to_queue(struct NotificationBufPair* notification_buf_pair,
+                  uint64_t phys_addr, uint32_t len, uint32_t pkts,
+                  uint32_t tx_pipe_id) {
+  return __send_to_queue(notification_buf_pair, phys_addr, len, pkts,
+                         tx_pipe_id);
 }
 
 uint32_t get_unreported_completions(
@@ -282,6 +284,13 @@ void enso_tx_pipe_free(struct NotificationBufPair* notification_buf_pair,
 
   enso_dev->FreeTxPipeID(enso_pipe_id);
   return;
+}
+
+int set_tbf_params(struct NotificationBufPair* notification_buf_pair,
+                   uint8_t rate, uint8_t burst) {
+  EnsoBackend* enso_dev =
+      static_cast<EnsoBackend*>(notification_buf_pair->fpga_dev);
+  return enso_dev->SetTBFParams(rate, burst);
 }
 
 }  // namespace enso

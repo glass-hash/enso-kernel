@@ -49,6 +49,8 @@ struct ClientConfig {
   std::string pcapPath;
   uint16_t timeout;
   uint32_t batchSize;
+  uint8_t rate;
+  uint8_t burst;
 };
 
 struct ServerConfig {
@@ -74,6 +76,7 @@ struct EnsoTxPipe {
   uint32_t numRawBytes;
   // Number of packets in the pipe
   uint32_t numPkts;
+  // Buffer with the packets
   uint8_t* buf;
 };
 

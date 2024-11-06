@@ -33,6 +33,7 @@
 #include "enso_ioctl.h"
 
 #include "enso_setup.h"
+#define ETH_PACKET_OVERHEAD 20
 
 /******************************************************************************
  * Static function prototypes
@@ -77,6 +78,8 @@ static long alloc_tx_pipe_id(struct chr_dev_bookkeep *dev_bk,
                              int __user *user_addr);
 static long free_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
                             unsigned long uarg);
+static long set_tbf_rate(struct dev_bookkeep *dev_bk,
+                         unsigned int __user *user_addr);
 
 /* Helpers */
 static void free_rx_tx_buf(struct chr_dev_bookkeep *chr_dev_bk);
@@ -92,6 +95,8 @@ void enso_io_write_32(uint32_t data, void *addr);
 uint32_t enso_io_read_32(void *addr);
 static int send_batch(struct notification_buf_pair *notif_buf_pair,
                       struct enso_send_tx_pipe_params *stpp);
+static void sched_rate_precompute(uint64_t rate, uint32_t *mult,
+                                  uint8_t *shift);
 
 /******************************************************************************
  * Device and I/O control function
@@ -308,6 +313,14 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
         return -ERESTARTSYS;
       }
       retval = free_tx_pipe_id(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
+      break;
+    case ENSO_IOCTL_SET_TBF_RATE:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
+      retval = set_tbf_rate(dev_bk, (unsigned int __user *)uarg);
       up(&dev_bk->sem);
       break;
     default:
@@ -747,6 +760,9 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                          unsigned long uarg) {
   struct enso_send_tx_pipe_params stpp;
   struct notification_buf_pair *notif_buf_pair = chr_dev_bk->notif_buf_pair;
+  struct dev_bookkeep *dev_bk = chr_dev_bk->dev_bk;
+  int64_t now;
+  int64_t line_len;
   if (copy_from_user(&stpp, (void __user *)uarg, sizeof(stpp))) {
     printk("couldn't copy arg from user.");
     return -EFAULT;
@@ -757,8 +773,27 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     return -EFAULT;
   }
 
-  send_batch(notif_buf_pair, &stpp);
-  return 0;
+  line_len = stpp.len + (stpp.pkts * ETH_PACKET_OVERHEAD);
+  // TBF logic
+  now = ktime_get_ns();
+  // calculate the number of tokens since last checkpoint
+  dev_bk->tokens_lc = min_t(s64, now - dev_bk->last_ckpt, dev_bk->buffer);
+  dev_bk->tokens_lc += dev_bk->tokens;
+  if (dev_bk->tokens_lc > dev_bk->buffer) dev_bk->tokens_lc = dev_bk->buffer;
+  // convert length to time and subtract those many number of tokens
+  // from tokens_lc
+  dev_bk->tokens_lc -= (((int64_t)line_len * dev_bk->mult) >> dev_bk->shift);
+  // tokens_lc -= (int64_t)(cur_batch.line_len * NSEC_PER_SEC) /
+  // dev_bk->rate;
+
+  if (dev_bk->tokens_lc >= 0) {
+    send_batch(notif_buf_pair, &stpp);
+    dev_bk->last_ckpt = now;
+    dev_bk->tokens = dev_bk->tokens_lc;
+    return 0;
+  }
+  // printk("tokens = %lld\n", dev_bk->tokens_lc);
+  return -1;
 }
 
 /**
@@ -1278,6 +1313,29 @@ static long free_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
   return 0;
 }
 
+static long set_tbf_rate(struct dev_bookkeep *dev_bk,
+                         unsigned int __user *user_addr) {
+  struct enso_tbf_rate_params params;
+  uint64_t max_burst_size;
+
+  if (copy_from_user(&params, user_addr, sizeof(params))) {
+    printk("couldn't copy params information from user.");
+    return -EFAULT;
+  }
+  printk("Setting rate to %u, and burst to %u\n", params.rate, params.burst);
+  // rate is in bytes per second
+  dev_bk->rate = ((uint64_t)params.rate * 1000000000) / 8;
+  max_burst_size = (uint64_t)((uint64_t)params.burst * 1024 * 1024 * 1024) / 8;
+  dev_bk->buffer = (int64_t)(max_burst_size * NSEC_PER_SEC) / dev_bk->rate;
+  dev_bk->last_ckpt = ktime_get_ns();
+  // tokens available intially are equal to the size of the buffer
+  dev_bk->tokens = dev_bk->buffer;
+  printk("Rate is %llu, buffer is %lld\n", dev_bk->rate, dev_bk->buffer);
+
+  sched_rate_precompute(dev_bk->rate, &dev_bk->mult, &dev_bk->shift);
+  return 0;
+}
+
 /******************************************************************************
  * Helper functions
  *****************************************************************************/
@@ -1573,6 +1631,23 @@ void enso_io_write_32(uint32_t data, void *addr) {
 uint32_t enso_io_read_32(void *addr) {
   smp_rmb();
   return ioread32(addr);
+}
+
+static void sched_rate_precompute(uint64_t rate, uint32_t *mult,
+                                  uint8_t *shift) {
+  uint64_t factor = NSEC_PER_SEC;
+
+  *mult = 1;
+  *shift = 0;
+
+  if (rate <= 0) return;
+
+  for (;;) {
+    *mult = div64_u64(factor, rate);
+    if (*mult & (1U << 31) || factor & (1ULL << 63)) break;
+    factor <<= 1;
+    (*shift)++;
+  }
 }
 
 /**

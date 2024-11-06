@@ -112,6 +112,12 @@ static __init int enso_init(void) {
     goto failed_notif_buf_pair_alloc;
   }
 
+  dev_bk->rate = 0;
+  dev_bk->buffer = 0;
+  dev_bk->last_ckpt = 0;
+  dev_bk->tokens_lc = 0;
+  dev_bk->tokens = 0;
+
   global_bk.dev_bk = dev_bk;
 
   return 0;

@@ -342,8 +342,11 @@ int Device::ApplyConfig(struct TxNotification* config_notification) {
 }
 
 void Device::Send(uint32_t tx_enso_pipe_id, uint64_t phys_addr,
-                  uint32_t nb_bytes) {
-  send_to_queue(&notification_buf_pair_, phys_addr, nb_bytes, tx_enso_pipe_id);
+                  uint32_t nb_bytes, uint32_t nb_pkts) {
+  // keep trying to send until successful
+  while (send_to_queue(&notification_buf_pair_, phys_addr, nb_bytes, nb_pkts,
+                       tx_enso_pipe_id) == -1) {
+  }
 
   uint32_t nb_pending_requests =
       (tx_pr_tail_ - tx_pr_head_) & kPendingTxRequestsBufMask;
@@ -409,6 +412,10 @@ int Device::DisableRoundRobin() {
 
 void Device::FreeTxPipeID(uint32_t pipe_id) {
   enso_tx_pipe_free(&notification_buf_pair_, pipe_id);
+}
+
+int Device::SetTBFParams(uint8_t rate, uint8_t burst) {
+  return set_tbf_params(&notification_buf_pair_, rate, burst);
 }
 
 }  // namespace enso

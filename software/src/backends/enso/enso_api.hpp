@@ -71,7 +71,8 @@ class EnsoDev {
   int alloc_rx_pipe_id(bool fallback = false);
   int free_rx_pipe_id(int id);
   int alloc_notif_buffer(int id);
-  int send_tx_pipe(uint64_t phys_addr, uint32_t len, uint32_t tx_pipe_id);
+  int send_tx_pipe(uint64_t phys_addr, uint32_t len, uint32_t pkts,
+                   uint32_t tx_pipe_id);
   int get_unreported_completions();
   int send_config(struct TxNotification *txNotification);
   int alloc_rx_pipe(int pipe_id, uint64_t buf_phys_addr);
@@ -83,6 +84,7 @@ class EnsoDev {
   int prefetch_pipe(int pipe_id);
   int alloc_tx_pipe_id();
   int free_tx_pipe_id(int pipe_id);
+  int set_tbf_params(uint8_t rate, uint8_t burst);
 
  private:
   /**

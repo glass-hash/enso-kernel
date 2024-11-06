@@ -103,8 +103,9 @@ void prefetch_pipe(struct RxEnsoPipeInternal* enso_pipe,
  *
  * @return number of bytes sent.
  */
-uint32_t send_to_queue(struct NotificationBufPair* notification_buf_pair,
-                       uint64_t phys_addr, uint32_t len, uint32_t tx_pipe_id);
+int send_to_queue(struct NotificationBufPair* notification_buf_pair,
+                  uint64_t phys_addr, uint32_t len, uint32_t pkts,
+                  uint32_t tx_pipe_id);
 
 /**
  * @brief Returns the number of transmission requests that were completed since
@@ -209,6 +210,9 @@ void advance_pipe_kernel(struct NotificationBufPair* notification_buf_pair,
 void fully_advance_pipe_kernel(
     struct RxEnsoPipeInternal* enso_pipe,
     struct NotificationBufPair* notification_buf_pair);
+
+int set_tbf_params(struct NotificationBufPair* notification_buf_pair,
+                   uint8_t rate, uint8_t burst);
 
 }  // namespace enso
 
