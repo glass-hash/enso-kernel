@@ -274,18 +274,6 @@ class EnsoBackend {
    */
   int FreeTxPipeID(int pipe_id) { return dev_->free_tx_pipe_id(pipe_id); }
 
-  /**
-   * @brief Get completions for a specific TxPipe ID.
-   *
-   * @param pipe_id ID of the TxPipe to get the completions.
-   *
-   * @return Return number of bytes that have been sent on success. On error, 0
-   * is returned.
-   */
-  uint32_t GetPipeCompletions(int pipe_id) {
-    return dev_->get_pipe_completions(pipe_id);
-  }
-
  private:
   EnsoBackend() noexcept {}
 

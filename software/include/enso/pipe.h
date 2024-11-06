@@ -180,15 +180,6 @@ class Device {
   void ProcessCompletions();
 
   /**
-   * @brief Gets the number of bytes successfully sent for a specific TxPipe.
-   * Used when the kernel (with packet scheduling) is responsible for processing
-   * completions.
-   *
-   * @param id ID of the TxPipe to check for completions.
-   */
-  void GetPipeCompletions(uint32_t id);
-
-  /**
    * @brief Enables hardware time stamping.
    *
    * All outgoing packets will receive a timestamp and all incoming packets will
@@ -377,11 +368,9 @@ class Device {
 
   int32_t next_pipe_id_ = -1;
 
-  uint32_t pending_completions = 0;
-
   uint32_t tx_pr_head_ = 0;
   uint32_t tx_pr_tail_ = 0;
-  // TODO(kshitij): Clean this up once the scheduler works
+
   std::array<TxPendingRequest, kMaxPendingTxRequests + 1> tx_pending_requests_;
   static constexpr uint32_t kPendingTxRequestsBufMask = kMaxPendingTxRequests;
   static_assert((kMaxPendingTxRequests & (kMaxPendingTxRequests + 1)) == 0,
@@ -892,7 +881,7 @@ class TxPipe {
    * @return The new buffer capacity after extending.
    */
   inline uint32_t TryExtendBuf() {
-    device_->GetPipeCompletions(kId);
+    device_->ProcessCompletions();
     return capacity();
   }
 

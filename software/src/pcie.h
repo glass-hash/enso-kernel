@@ -210,9 +210,6 @@ void fully_advance_pipe_kernel(
     struct RxEnsoPipeInternal* enso_pipe,
     struct NotificationBufPair* notification_buf_pair);
 
-uint32_t get_pipe_completions(struct NotificationBufPair* notification_buf_pair,
-                              uint32_t tx_pipe_id);
-
 }  // namespace enso
 
 #endif  // SOFTWARE_SRC_PCIE_H_
