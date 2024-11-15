@@ -147,6 +147,7 @@ struct dev_bookkeep {
   uint32_t nb_tx_pipes;
   uint8_t shift;
   bool enable_rr;
+  spinlock_t tbf_lock;
 };
 
 /**

@@ -661,6 +661,7 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   notif_buf_pair->regs = nbp_q_regs;
 
   // 3. Allocate TX and RX notification buffers
+
   notif_buf_pair->rx_buf =
       (struct rx_notification *)kmalloc(rx_tx_buf_size, GFP_DMA);
   if (notif_buf_pair->rx_buf == NULL) {
@@ -763,6 +764,7 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   struct dev_bookkeep *dev_bk = chr_dev_bk->dev_bk;
   int64_t now;
   int64_t line_len;
+  int ret = -1;
   if (copy_from_user(&stpp, (void __user *)uarg, sizeof(stpp))) {
     printk("couldn't copy arg from user.");
     return -EFAULT;
@@ -776,6 +778,7 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   line_len = stpp.len + (stpp.pkts * ETH_PACKET_OVERHEAD);
   // TBF logic
   now = ktime_get_ns();
+  spin_lock(&dev_bk->tbf_lock);
   // calculate the number of tokens since last checkpoint
   dev_bk->tokens_lc = min_t(s64, now - dev_bk->last_ckpt, dev_bk->buffer);
   dev_bk->tokens_lc += dev_bk->tokens;
@@ -787,9 +790,14 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   // dev_bk->rate;
 
   if (dev_bk->tokens_lc >= 0) {
-    send_batch(notif_buf_pair, &stpp);
     dev_bk->last_ckpt = now;
     dev_bk->tokens = dev_bk->tokens_lc;
+    ret = 0;
+  }
+  spin_unlock(&dev_bk->tbf_lock);
+
+  if (ret == 0) {
+    send_batch(notif_buf_pair, &stpp);
     return 0;
   }
   // printk("tokens = %lld\n", dev_bk->tokens_lc);

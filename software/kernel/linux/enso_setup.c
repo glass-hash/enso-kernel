@@ -117,6 +117,7 @@ static __init int enso_init(void) {
   dev_bk->last_ckpt = 0;
   dev_bk->tokens_lc = 0;
   dev_bk->tokens = 0;
+  spin_lock_init(&dev_bk->tbf_lock);
 
   global_bk.dev_bk = dev_bk;
 
