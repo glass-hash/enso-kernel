@@ -1226,7 +1226,6 @@ static long alloc_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
     }
   }
 
-  atomic_set(&dev_bk->tx_completions[pipe_id], 0);
   dev_bk->nb_tx_pipes++;
 
   if (pipe_id < 0) {

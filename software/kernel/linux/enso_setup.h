@@ -133,7 +133,6 @@ struct dev_bookkeep {
   uint8_t *notif_q_status;
   uint8_t *rx_pipe_id_status;
   uint8_t *tx_pipe_id_status;
-  atomic_t *tx_completions;
   struct notification_buf_pair **notif_buf_pairs;
   uint32_t chr_open_cnt;
   uint32_t nb_fb_queues;
