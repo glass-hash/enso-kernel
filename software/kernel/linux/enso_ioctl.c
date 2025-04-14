@@ -623,7 +623,6 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   struct notification_buf_pair *notif_buf_pair;
   uint8_t *bar2_addr;
   struct queue_regs *nbp_q_regs;
-  uint32_t page_ind = 0;
   size_t rx_tx_buf_size = 512 * PAGE_SIZE;
   uint64_t rx_buf_phys_addr;
 
@@ -662,16 +661,11 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
 
   // 3. Allocate TX and RX notification buffers
 
-  notif_buf_pair->rx_buf =
-      (struct rx_notification *)kmalloc(rx_tx_buf_size, GFP_DMA);
+  notif_buf_pair->rx_buf = (struct rx_notification *)kmalloc(
+      rx_tx_buf_size, GFP_KERNEL | __GFP_COMP);
   if (notif_buf_pair->rx_buf == NULL) {
     printk("RX_TX allocation failed");
     return -ENOMEM;
-  }
-  // reserve these pages, so that they are not swapped out
-  for (; page_ind < rx_tx_buf_size; page_ind += PAGE_SIZE) {
-    SetPageReserved(
-        virt_to_page(((unsigned long)notif_buf_pair->rx_buf) + page_ind));
   }
   rx_buf_phys_addr = virt_to_phys(notif_buf_pair->rx_buf);
 
@@ -1356,8 +1350,6 @@ static long set_tbf_rate(struct dev_bookkeep *dev_bk,
 void free_rx_tx_buf(struct chr_dev_bookkeep *chr_dev_bk) {
   // Each RX/TX notification buffer is 2MB in size. There are
   // 512 4KB pages in one rx/tx buffer.
-  size_t rx_tx_buf_size = 512 * PAGE_SIZE;
-  uint32_t page_ind = 0;
   struct rx_notification *rx_notif = NULL;
   if (chr_dev_bk == NULL) {
     return;
@@ -1366,9 +1358,6 @@ void free_rx_tx_buf(struct chr_dev_bookkeep *chr_dev_bk) {
     return;
   }
   rx_notif = chr_dev_bk->notif_buf_pair->rx_buf;
-  for (; page_ind < rx_tx_buf_size; page_ind += PAGE_SIZE) {
-    ClearPageReserved(virt_to_page(((unsigned long)rx_notif) + page_ind));
-  }
   kfree(rx_notif);
 }
 
