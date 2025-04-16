@@ -717,7 +717,7 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   notif_buf_pair->next_rx_ids_head = 0;
   notif_buf_pair->next_rx_ids_tail = 0;
   notif_buf_pair->tx_full_cnt = 0;
-  notif_buf_pair->nb_unreported_completions = 0;
+  atomic_set(&notif_buf_pair->nb_unreported_completions, 0);
 
   printk("Rx buf address: %llx\n", rx_buf_phys_addr);
   enso_io_write_32((uint32_t)rx_buf_phys_addr, &nbp_q_regs->rx_mem_low);
@@ -740,6 +740,7 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   notif_buf_pair->tx_ring_head = 0;
   notif_buf_pair->tx_ring_tail = 0;
 
+  atomic_set(&notif_buf_pair->do_completions, 0);
   // update the notification buffer pair in dev_bk
   dev_bk->notif_buf_pairs[notif_buf_pair->id] = notif_buf_pair;
   return 0;
@@ -803,16 +804,17 @@ static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
   notif_buf_pair = chr_dev_bk->notif_buf_pair;
   dev_bk = chr_dev_bk->dev_bk;
 
-  // first we update the tx head
-  spin_lock(&dev_bk->lock);
-  update_tx_head(notif_buf_pair);
-  spin_unlock(&dev_bk->lock);
-  completions = notif_buf_pair->nb_unreported_completions;
+  atomic_set(&notif_buf_pair->do_completions, 1);
+
+  while (atomic_read(&notif_buf_pair->do_completions)) {
+  }
+
+  completions = atomic_xchg(&notif_buf_pair->nb_unreported_completions, 0);
   if (copy_to_user(user_addr, &completions, sizeof(completions))) {
     printk("couldn't copy information to user.");
     return -EFAULT;
   }
-  notif_buf_pair->nb_unreported_completions = 0;  // reset
+  atomic_set(&notif_buf_pair->nb_unreported_completions, 0);
   return 0;
 }
 
@@ -889,9 +891,7 @@ static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
   // Block until we can send.
   while (unlikely(free_slots == 0)) {
     ++notif_buf_pair->tx_full_cnt;
-    spin_lock(&dev_bk->lock);
     update_tx_head(notif_buf_pair);
-    spin_unlock(&dev_bk->lock);
     free_slots =
         (notif_buf_pair->tx_head - tx_tail - 1) % NOTIFICATION_BUF_SIZE;
   }
@@ -905,14 +905,15 @@ static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
   enso_io_write_32(tx_tail, notif_buf_pair->tx_tail_ptr);
 
   // Wait for request to be consumed.
-  nb_unreported_completions = notif_buf_pair->nb_unreported_completions;
-  while (notif_buf_pair->nb_unreported_completions ==
+  nb_unreported_completions =
+      atomic_read(&notif_buf_pair->nb_unreported_completions);
+  while (atomic_read(&notif_buf_pair->nb_unreported_completions) ==
          nb_unreported_completions) {
-    spin_lock(&dev_bk->lock);
     update_tx_head(notif_buf_pair);
-    spin_unlock(&dev_bk->lock);
   }
-  notif_buf_pair->nb_unreported_completions = nb_unreported_completions;
+
+  atomic_set(&notif_buf_pair->nb_unreported_completions,
+             nb_unreported_completions);
 
   return 0;
 }
@@ -1386,13 +1387,14 @@ void update_tx_head(struct notification_buf_pair *notif_buf_pair) {
   uint16_t i;
   uint8_t wrap_tracker_mask;
   uint8_t no_wrap;
+  int num_comp = 0;
 
   if (head == tail) {
     return;
   }
 
   // Advance pointer for pkt queues that were already sent.
-  for (i = 0; i < 1; ++i) {
+  for (i = 0; i < COMPLETIONS_BATCH_SIZE; ++i) {
     if (head == tail) {
       break;
     }
@@ -1411,13 +1413,14 @@ void update_tx_head(struct notification_buf_pair *notif_buf_pair) {
     // for two notifications.
     wrap_tracker_mask = 1 << (head & 0x7);
     no_wrap = !(notif_buf_pair->wrap_tracker[head / 8] & wrap_tracker_mask);
-    notif_buf_pair->nb_unreported_completions += no_wrap;
+    num_comp += no_wrap;
     notif_buf_pair->wrap_tracker[head / 8] &= ~wrap_tracker_mask;
 
     head = (head + 1) % NOTIFICATION_BUF_SIZE;
   }
 
   notif_buf_pair->tx_head = head;
+  atomic_add(num_comp, &notif_buf_pair->nb_unreported_completions);
 }
 
 /**
@@ -1718,7 +1721,6 @@ int enso_sched(void *data) {
   struct notification_buf_pair *notif_buf_pair = NULL;
   struct tx_send_ring_element cur_batch;
   uint32_t notif_buf_id = 0;
-  uint32_t num_comp = 0;
   uint32_t pipe_id = 0;
   uint32_t batch_size = 0;
 
@@ -1738,18 +1740,12 @@ int enso_sched(void *data) {
           // increment head
           notif_buf_pair->tx_ring_head =
               (notif_buf_pair->tx_ring_head + 1) % NOTIFICATION_BUF_SIZE;
-          // wait for the NIC to send it
-          while (num_comp == 0) {
-            // TODO(kshitij): make this call blocking and get rid of the
-            // num_comp variable
-            update_tx_head(notif_buf_pair);
-            num_comp = notif_buf_pair->nb_unreported_completions;
+        }
+        if (atomic_read(&notif_buf_pair->do_completions) == 1) {
+          update_tx_head(notif_buf_pair);
+          if (atomic_read(&notif_buf_pair->nb_unreported_completions) > 0) {
+            atomic_set(&notif_buf_pair->do_completions, 0);
           }
-          // reset completions to zero
-          notif_buf_pair->nb_unreported_completions = 0;
-          num_comp = 0;
-          // add it to the completions
-          atomic_add(batch_size, &dev_bk->tx_completions[pipe_id]);
         }
       } else {
         // assume that notification buffers are allocated sequentially

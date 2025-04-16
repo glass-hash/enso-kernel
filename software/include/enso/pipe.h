@@ -892,7 +892,7 @@ class TxPipe {
    * @return The new buffer capacity after extending.
    */
   inline uint32_t TryExtendBuf() {
-    device_->GetPipeCompletions(kId);
+    device_->ProcessCompletions();
     return capacity();
   }
 
