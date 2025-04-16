@@ -59,6 +59,7 @@
 #define HUGE_PAGE_SIZE (0x1ULL << 21)
 #define MEM_PER_QUEUE (0x1ULL << 12)
 #define BATCH_SIZE 64
+#define COMPLETIONS_BATCH_SIZE 64
 #define SCHED_CORE_NUM 8
 
 // These determine the maximum number of notification buffers and enso pipes.
@@ -293,12 +294,14 @@ struct notification_buf_pair {
   uint32_t rx_head;
   uint32_t tx_head;
   uint32_t tx_tail;
-  uint32_t nb_unreported_completions;
 
   uint16_t next_rx_ids_head;
   uint16_t next_rx_ids_tail;
   uint16_t tx_ring_head;
   uint16_t tx_ring_tail;
+
+  atomic_t do_completions;
+  atomic_t nb_unreported_completions;
 };
 
 /**
