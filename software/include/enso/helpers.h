@@ -195,6 +195,65 @@ _enso_always_inline void memcpy_64_align(void* dst, const void* src, size_t n) {
   }
 }
 
+/**
+ * @brief Copies data from src to dst using non-temporal stores. Wraps around
+ * once it reaches the end of `src`. Assumes `src_size` and `dst_size` are
+ * multiples of 64. Does not have any alignment restrictions but will perform
+ * better if both `src` and `dst` are 64-byte aligned addresses.
+ *
+ * @param dst Destination address.
+ * @param src Source address.
+ * @param dst_size number of bytes in the destination.
+ * $param src_size number of bytes in the source.
+ */
+_enso_always_inline void memcpy_wrap_around(void* dst, const void* src,
+                                            size_t dst_size, size_t src_size) {
+  size_t src_off = 0;
+  size_t dst_off = 0;
+  uint8_t* dst_ptr = (uint8_t*)dst;
+
+  while (dst_off < dst_size) {
+#if defined __AVX512F__
+    __m512i zmm0 =
+        _mm512_loadu_si512((const __m512i*)((const char*)src + src_off));
+    _mm512_stream_si512((__m512i*)(dst_ptr + dst_off), zmm0);
+#elif defined __AVX2__
+    __m256i ymm0 =
+        _mm256_loadu_si256((const __m256i*)((const char*)src + src_off));
+    __m256i ymm1 =
+        _mm256_loadu_si256((const __m256i*)((const char*)src + src_off + 32));
+
+    _mm256_stream_si256((__m256i*)(dst_ptr + dst_off), ymm0);
+    _mm256_stream_si256((__m256i*)(dst_ptr + dst_off + 32), ymm1);
+#elif defined __SSE2__
+    __m128i xmm0 =
+        _mm_loadu_si128((const __m128i*)((const char*)src + src_off));
+    __m128i xmm1 =
+        _mm_loadu_si128((const __m128i*)((const char*)src + src_off + 16));
+    __m128i xmm2 =
+        _mm_loadu_si128((const __m128i*)((const char*)src + src_off + 32));
+    __m128i xmm3 =
+        _mm_loadu_si128((const __m128i*)((const char*)src + src_off + 48));
+
+    _mm_stream_si128((__m128i*)(dst_ptr + dst_off), xmm0);
+    _mm_stream_si128((__m128i*)(dst_ptr + dst_off + 16), xmm1);
+    _mm_stream_si128((__m128i*)(dst_ptr + dst_off + 32), xmm2);
+    _mm_stream_si128((__m128i*)(dst_ptr + dst_off + 48), xmm3);
+#else
+    memcpy(dst_ptr + dst_off, (const char*)src + src_off, 64);
+#endif
+    dst_off += 64;
+    src_off += 64;
+    if (src_off == src_size) {
+      src_off = 0;
+    }
+  }
+
+#if defined(__AVX512F__) || defined(__AVX2__) || defined(__SSE2__)
+  _mm_sfence();
+#endif
+}
+
 _enso_always_inline uint16_t get_pkt_dst_lsb(const uint8_t* addr) {
   const struct ether_header* l2_hdr = (struct ether_header*)addr;
   const struct iphdr* l3_hdr = (struct iphdr*)(l2_hdr + 1);

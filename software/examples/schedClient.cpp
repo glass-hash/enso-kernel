@@ -31,6 +31,7 @@
  */
 
 #include <enso/helpers.h>
+#include <unistd.h>
 
 #include <chrono>
 #include <cstdint>
@@ -45,20 +46,6 @@
 #define MIN_PACKET_SIZE 64
 
 Client::Client(const ClientConfig& config) { startClient(config); }
-
-void Client::fillPipeWithPackets(uint8_t* pipeBuf, uint32_t& alignedBytes,
-                                 uint32_t& rawBytes, uint32_t& pkts,
-                                 uint32_t batchSize) {
-  uint32_t initBufLength = alignedBytes;
-  uint32_t initGoodBytes = rawBytes;
-  uint32_t initNumPkts = pkts;
-  while ((alignedBytes + initBufLength) <= batchSize) {
-    memcpy(pipeBuf + alignedBytes, pipeBuf, initBufLength);
-    alignedBytes += initBufLength;
-    rawBytes += initGoodBytes;
-    pkts += initNumPkts;
-  }
-}
 
 void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
                             const u_char* pktBytes) {
@@ -80,65 +67,41 @@ void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
     exit(2);
   }
   uint8_t* buf;
-  if (posix_memalign((void**)&buf, 64, context->batchSize * sizeof(uint8_t)) !=
-      0) {
+  // Instead of allocating batch size worth of data and copying it on to the
+  // TxPipe we keep the source buffer small and copy it over and over again for
+  // better cache performance
+  uint32_t pktAlignedSize = numFlits * MIN_PACKET_SIZE;
+  if (posix_memalign((void**)&buf, 64, pktAlignedSize * sizeof(uint8_t)) != 0) {
     std::cerr << "Posix memalign failed" << std::endl;
     exit(2);
   }
+  uint32_t numPktsInBatch = context->batchSize / pktAlignedSize;
   struct EnsoTxPipe etp(pipe, buf);
   memcpy(buf, pktBytes, len);
-  etp.numAlignedBytes = numFlits * MIN_PACKET_SIZE;
-  etp.numRawBytes = len;
-  etp.numPkts = 1;
-  context->client->fillPipeWithPackets(buf, etp.numAlignedBytes,
-                                       etp.numRawBytes, etp.numPkts,
-                                       context->batchSize);
+  etp.bufSize = pktAlignedSize;
+  etp.numAlignedBytes = pktAlignedSize * numPktsInBatch;
+  etp.numRawBytes = len * numPktsInBatch;
+  etp.numPkts = numPktsInBatch;
   context->txPipes.push_back(etp);
-}
-
-inline uint64_t get_ns_chrono(void) {
-  auto now = std::chrono::steady_clock::now();
-  return std::chrono::duration_cast<std::chrono::nanoseconds>(
-             now.time_since_epoch())
-      .count();
 }
 
 void Client::runTx(std::vector<enso::tx_stats_t>& stats,
                    std::vector<struct EnsoTxPipe>& pipes, uint16_t coreId,
                    uint16_t flowsPerCore) {
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-  std::cout << "Running on core " << sched_getcpu() << std::endl;
+  std::cout << "Running on core " << coreId << " with pid = " << getpid()
+            << std::endl;
   uint16_t startInd = coreId * flowsPerCore;
   uint16_t endInd = startInd + flowsPerCore;
-  /*int64_t now = 0;
-  int64_t tokens_lc = 0;
-  int64_t last_checkpoint = get_ns_chrono();
-
-  uint64_t rate = 12500000000;
-  uint64_t max_size = (int64_t)((int64_t)2*1024*1024*1024) / 8;
-  int64_t buffer = (int64_t) (max_size * 1000000000) / rate;
-  int64_t tokens = buffer;
-  int64_t batch_size = 86016;*/
-
   while (ProgramConfig::keepRunning) {
     for (uint16_t i = startInd; i < endInd; i++) {
       // send the packets
       uint8_t* pipeBuf = pipes[i].txPipe->AllocateBuf(pipes[i].numAlignedBytes);
-      memcpy(pipeBuf, pipes[i].buf, pipes[i].numAlignedBytes);
-      // now = get_ns_chrono();
-      // tokens_lc = std::min(now - last_checkpoint, buffer);
-      // tokens_lc += tokens;
-      // if (tokens_lc > buffer)
-      //     tokens_lc = buffer;
-      // tokens_lc -= (int64_t)(batch_size * 1000000000) / rate;
-      // if(tokens_lc >= 0) {
+      enso::memcpy_wrap_around(pipeBuf, pipes[i].buf, pipes[i].numAlignedBytes,
+                               pipes[i].bufSize);
       pipes[i].txPipe->SendAndFree(pipes[i].numAlignedBytes);
       // update the stats
       stats[pipes[i].txPipe->id()].nb_bytes += pipes[i].numRawBytes;
       stats[pipes[i].txPipe->id()].nb_pkts += pipes[i].numPkts;
-      // last_checkpoint = now;
-      // tokens = tokens_lc;
-      // }
     }
   }
 }
