@@ -74,6 +74,9 @@ struct EnsoTxPipe {
   uint32_t numRawBytes;
   // Number of packets in the pipe
   uint32_t numPkts;
+  // Size of the buffer
+  uint32_t bufSize;
+  // Buffer with the packet
   uint8_t* buf;
 };
 
@@ -131,9 +134,6 @@ class Client {
   explicit Client(const ClientConfig& clientConfig);
 
  private:
-  void fillPipeWithPackets(uint8_t* pipeBuf, uint32_t& alignedBytes,
-                           uint32_t& rawBytes, uint32_t& pkts,
-                           uint32_t batchSize);
   static void pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
                              const u_char* pktBytes);
   void runTx(std::vector<enso::tx_stats_t>& stats,
