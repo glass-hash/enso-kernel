@@ -180,14 +180,6 @@ std::unique_ptr<Device> Device::Create(
 }
 
 Device::~Device() {
-  uint32_t nb_pending_requests =
-      (tx_pr_tail_ - tx_pr_head_) & kPendingTxRequestsBufMask;
-  while (nb_pending_requests > 0) {
-    ProcessCompletions();
-    nb_pending_requests =
-        (tx_pr_tail_ - tx_pr_head_) & kPendingTxRequestsBufMask;
-  }
-
   for (auto& pipe : rx_tx_pipes_) {
     rx_tx_pipes_map_[pipe->rx_id()] = nullptr;
     delete pipe;
