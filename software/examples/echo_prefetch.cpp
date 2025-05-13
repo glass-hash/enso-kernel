@@ -57,6 +57,11 @@ void run_echo(uint32_t nb_queues, uint32_t core_id,
   using enso::RxTxPipe;
 
   std::unique_ptr<Device> dev = Device::Create();
+  int ret = dev->SetTBFParams(100, 1);
+  if (ret != 0) {
+    std::cerr << "Unable to set TBF params" << std::endl;
+    exit(2);
+  }
   std::vector<RxTxPipe*> pipes;
 
   if (!dev) {
@@ -91,6 +96,7 @@ void run_echo(uint32_t nb_queues, uint32_t core_id,
       // Prefetch next pipe.
       pipes[(i + 1) & queue_mask]->Prefetch();
 
+      uint32_t num_pkts = 0;
       for (auto pkt : batch) {
         ++pkt[63];  // Increment payload.
 
@@ -98,15 +104,16 @@ void run_echo(uint32_t nb_queues, uint32_t core_id,
           asm("nop");
         }
 
-        ++(stats->nb_pkts);
+        num_pkts++;
       }
       uint32_t batch_length = batch.processed_bytes();
       pipe->ConfirmBytes(batch_length);
 
       stats->recv_bytes += batch_length;
       ++(stats->nb_batches);
+      stats->nb_pkts += num_pkts;
 
-      pipe->SendAndFree(batch_length);
+      pipe->SendAndFree(batch_length, num_pkts);
     }
   }
 }

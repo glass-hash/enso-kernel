@@ -1186,8 +1186,8 @@ class RxTxPipe {
    *
    * @param nb_bytes The number of bytes to send.
    */
-  inline void SendAndFree(uint32_t nb_bytes) {
-    tx_pipe_->SendAndFree(nb_bytes, 0);
+  inline void SendAndFree(uint32_t nb_bytes, uint32_t nb_pkts) {
+    tx_pipe_->SendAndFree(nb_bytes, nb_pkts);
     last_tx_pipe_capacity_ -= nb_bytes;
   }
 
