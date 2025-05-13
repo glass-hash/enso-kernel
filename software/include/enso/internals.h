@@ -74,7 +74,6 @@ struct RxEnsoPipeInternal {
   uint32_t krx_tail;
   uint32_t last_size;
   enso_pipe_id_t id;
-  std::string huge_page_prefix;
 };
 
 }  // namespace enso
