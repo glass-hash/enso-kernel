@@ -106,6 +106,11 @@ inline uint32_t get_pkt_rtt(const uint8_t* pkt,
   return be32toh(rtt);
 }
 
+inline void set_pkt_rtt(const uint8_t* pkt, uint32_t val,
+                        const uint8_t rtt_offset = kDefaultRttOffset) {
+  *((uint32_t*)(pkt + rtt_offset)) = val;
+}
+
 constexpr uint16_t be_to_le_16(const uint16_t le) {
   return ((le & (uint16_t)0x00ff) << 8) | ((le & (uint16_t)0xff00) >> 8);
 }
