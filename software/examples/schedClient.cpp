@@ -60,6 +60,9 @@ void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
 
   uint16_t devId = context->txPipes.size() / context->numFlowsPerCore;
   uint32_t len = enso::get_pkt_len(pktBytes);
+  // Set the timestamp to zero to calculate inter-arrival packet rates on the
+  // receiver
+  enso::set_pkt_rtt(pktBytes, 0);
   uint32_t numFlits = (len - 1) / MIN_PACKET_SIZE + 1;
   TxPipe* pipe = context->devs[devId]->AllocateTxPipe();
   if (!pipe) {
