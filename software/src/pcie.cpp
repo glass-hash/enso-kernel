@@ -245,7 +245,6 @@ void notification_buf_free(struct NotificationBufPair* notification_buf_pair) {
 void enso_rx_pipe_free(struct NotificationBufPair* notification_buf_pair,
                        struct RxEnsoPipeInternal* enso_pipe,
                        enso_pipe_id_t enso_pipe_id) {
-  (void)enso_pipe;
   EnsoBackend* enso_dev =
       static_cast<EnsoBackend*>(notification_buf_pair->fpga_dev);
 
@@ -253,7 +252,7 @@ void enso_rx_pipe_free(struct NotificationBufPair* notification_buf_pair,
 
   if (enso_pipe->buf) {
     munmap(enso_pipe->buf, kBufPageSize);
-    std::string huge_page_path = enso_pipe->huge_page_prefix +
+    std::string huge_page_path = notification_buf_pair->huge_page_prefix +
                                  std::string(kHugePageRxPipePathPrefix) +
                                  std::to_string(enso_pipe_id);
     unlink(huge_page_path.c_str());
