@@ -87,6 +87,7 @@ void run_echo_event(uint32_t nb_queues, uint32_t core_id, uint32_t nb_cycles,
 
     auto batch = pipe->PeekPktsFromTail();
 
+    uint32_t num_pkts = 0;
     for (auto pkt : batch) {
       ++pkt[63];  // Increment payload.
 
@@ -94,15 +95,16 @@ void run_echo_event(uint32_t nb_queues, uint32_t core_id, uint32_t nb_cycles,
         asm("nop");
       }
 
-      ++(stats->nb_pkts);
+      num_pkts++;
     }
     uint32_t batch_length = batch.processed_bytes();
     pipe->ConfirmBytes(batch_length);
 
     stats->recv_bytes += batch_length;
     ++(stats->nb_batches);
+    stats->nb_pkts += num_pkts;
 
-    pipe->SendAndFree(batch_length);
+    pipe->SendAndFree(batch_length, num_pkts);
   }
 }
 

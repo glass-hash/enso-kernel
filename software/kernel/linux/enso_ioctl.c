@@ -731,7 +731,7 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   notif_buf_pair->next_rx_ids_head = 0;
   notif_buf_pair->next_rx_ids_tail = 0;
   notif_buf_pair->tx_full_cnt = 0;
-  atomic_set(&notif_buf_pair->nb_unreported_completions, 0);
+  notif_buf_pair->nb_unreported_completions = 0;
 
   printk("Rx buf address: %llx\n", rx_buf_phys_addr);
   enso_io_write_32((uint32_t)rx_buf_phys_addr, &nbp_q_regs->rx_mem_low);
@@ -753,7 +753,7 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   }
   notif_buf_pair->tx_ring_head = 0;
   notif_buf_pair->tx_ring_tail = 0;
-  atomic_set(&notif_buf_pair->do_completions, 0);
+  spin_lock_init(&notif_buf_pair->tx_notif_buf_lock);
 
   // update the notification buffer pair in dev_bk
   dev_bk->notif_buf_pairs[notif_buf_pair->id] = notif_buf_pair;
@@ -814,24 +814,21 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
  */
 static long get_unreported_completions(struct chr_dev_bookkeep *chr_dev_bk,
                                        unsigned int __user *user_addr) {
-  struct dev_bookkeep *dev_bk;
   struct notification_buf_pair *notif_buf_pair;
   uint32_t completions;
   notif_buf_pair = chr_dev_bk->notif_buf_pair;
-  dev_bk = chr_dev_bk->dev_bk;
 
-  atomic_set(&notif_buf_pair->do_completions, 1);
-
-  while (atomic_read(&notif_buf_pair->do_completions)) {
-  }
-
-  completions = atomic_xchg(&notif_buf_pair->nb_unreported_completions, 0);
+  spin_lock(&notif_buf_pair->tx_notif_buf_lock);
+  update_tx_head(notif_buf_pair);
+  spin_unlock(&notif_buf_pair->tx_notif_buf_lock);
+  completions = notif_buf_pair->nb_unreported_completions;
 
   if (copy_to_user(user_addr, &completions, sizeof(completions))) {
     printk("couldn't copy information to user.");
     return -EFAULT;
   }
-  atomic_set(&notif_buf_pair->nb_unreported_completions, 0);
+
+  notif_buf_pair->nb_unreported_completions = 0;  // reset
   return 0;
 }
 
@@ -908,7 +905,9 @@ static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
   // Block until we can send.
   while (unlikely(free_slots == 0)) {
     ++notif_buf_pair->tx_full_cnt;
+    spin_lock(&notif_buf_pair->tx_notif_buf_lock);
     update_tx_head(notif_buf_pair);
+    spin_unlock(&notif_buf_pair->tx_notif_buf_lock);
     free_slots =
         (notif_buf_pair->tx_head - tx_tail - 1) % NOTIFICATION_BUF_SIZE;
   }
@@ -922,14 +921,14 @@ static long send_config(struct chr_dev_bookkeep *chr_dev_bk,
   enso_io_write_32(tx_tail, notif_buf_pair->tx_tail_ptr);
 
   // Wait for request to be consumed.
-  nb_unreported_completions =
-      atomic_read(&notif_buf_pair->nb_unreported_completions);
-  while (atomic_read(&notif_buf_pair->nb_unreported_completions) ==
+  nb_unreported_completions = notif_buf_pair->nb_unreported_completions;
+  while (notif_buf_pair->nb_unreported_completions ==
          nb_unreported_completions) {
+    spin_lock(&notif_buf_pair->tx_notif_buf_lock);
     update_tx_head(notif_buf_pair);
+    spin_unlock(&notif_buf_pair->tx_notif_buf_lock);
   }
-  atomic_set(&notif_buf_pair->nb_unreported_completions,
-             nb_unreported_completions);
+  notif_buf_pair->nb_unreported_completions = nb_unreported_completions;
 
   return 0;
 }
@@ -1426,7 +1425,7 @@ void update_tx_head(struct notification_buf_pair *notif_buf_pair) {
   uint16_t i;
   uint8_t wrap_tracker_mask;
   uint8_t no_wrap;
-  int num_comp = 0;
+  uint32_t num_comp = 0;
 
   if (head == tail) {
     return;
@@ -1459,7 +1458,7 @@ void update_tx_head(struct notification_buf_pair *notif_buf_pair) {
   }
 
   notif_buf_pair->tx_head = head;
-  atomic_add(num_comp, &notif_buf_pair->nb_unreported_completions);
+  notif_buf_pair->nb_unreported_completions = num_comp;
 }
 
 /**
@@ -1706,6 +1705,7 @@ int send_batch(struct notification_buf_pair *notif_buf_pair,
   uint32_t req_length;
   uint32_t buf_page_size = HUGE_PAGE_SIZE;
 
+  spin_lock(&notif_buf_pair->tx_notif_buf_lock);
   tx_buf = notif_buf_pair->tx_buf;
   tx_tail = notif_buf_pair->tx_tail;
   missing_bytes = stpp->len;
@@ -1752,6 +1752,8 @@ int send_batch(struct notification_buf_pair *notif_buf_pair,
 
   notif_buf_pair->tx_tail = tx_tail;
   enso_io_write_32(tx_tail, notif_buf_pair->tx_tail_ptr);
+
+  spin_unlock(&notif_buf_pair->tx_notif_buf_lock);
   return 0;
 }
 
@@ -1817,12 +1819,6 @@ int enso_sched(void *data) {
             // update scheduler related metrics
             dev_bk->last_ckpt = now;
             dev_bk->tokens = dev_bk->tokens_lc;
-          }
-        }
-        if (atomic_read(&notif_buf_pair->do_completions) == 1) {
-          update_tx_head(notif_buf_pair);
-          if (atomic_read(&notif_buf_pair->nb_unreported_completions) > 0) {
-            atomic_set(&notif_buf_pair->do_completions, 0);
           }
         }
       } else {
