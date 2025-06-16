@@ -732,7 +732,7 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
                    &nbp_q_regs->tx_mem_high);
 
   notif_buf_pair->tx_send_ring = kzalloc(
-      NOTIFICATION_BUF_SIZE * sizeof(struct tx_send_ring_element), GFP_KERNEL);
+      TX_APP_SCHED_RING_SIZE * sizeof(struct tx_send_ring_element), GFP_KERNEL);
   if (notif_buf_pair->tx_send_ring == NULL) {
     printk("couldn't create send ring buffer\n");
     return -ENOMEM;
@@ -771,7 +771,7 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     return -EFAULT;
   }
 
-  if (((notif_buf_pair->tx_ring_tail + 1) % NOTIFICATION_BUF_SIZE) ==
+  if (((notif_buf_pair->tx_ring_tail + 1) % TX_APP_SCHED_RING_SIZE) ==
       notif_buf_pair->tx_ring_head) {
     // buffer is full
     return -1;
@@ -781,7 +781,7 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_tail].notif_buf_id =
       notif_buf_pair->id;
   notif_buf_pair->tx_ring_tail =
-      (notif_buf_pair->tx_ring_tail + 1) % NOTIFICATION_BUF_SIZE;
+      (notif_buf_pair->tx_ring_tail + 1) % TX_APP_SCHED_RING_SIZE;
   return 0;
 }
 
@@ -1741,7 +1741,7 @@ int enso_sched(void *data) {
           send_batch(notif_buf_pair, &cur_batch.ioctl_params);
           // increment head
           notif_buf_pair->tx_ring_head =
-              (notif_buf_pair->tx_ring_head + 1) % NOTIFICATION_BUF_SIZE;
+              (notif_buf_pair->tx_ring_head + 1) % TX_APP_SCHED_RING_SIZE;
         }
       } else {
         // assume that notification buffers are allocated sequentially

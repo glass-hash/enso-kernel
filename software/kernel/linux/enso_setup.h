@@ -60,6 +60,7 @@
 #define BATCH_SIZE 64
 #define COMPLETIONS_BATCH_SIZE 64
 #define SCHED_CORE_NUM 8
+#define TX_APP_SCHED_RING_SIZE NOTIFICATION_BUF_SIZE
 
 // These determine the maximum number of notification buffers and enso pipes.
 // These macros also exist in hardware and **must be kept in sync**. Update the
