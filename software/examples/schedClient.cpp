@@ -44,6 +44,7 @@
 
 #define INTEL_FPGA_PCIE_BDF "65:00.0"
 #define MIN_PACKET_SIZE 64
+#define NSEC_PER_SEC 1000000000ULL
 
 Client::Client(const ClientConfig& config) { startClient(config); }
 
@@ -88,23 +89,46 @@ void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
   context->txPipes.push_back(etp);
 }
 
+static inline uint64_t get_ns(void) {
+  struct timespec ts;
+  // Get current time using CLOCK_MONOTONIC
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  // Convert to nanoseconds
+  uint64_t ns = (uint64_t)ts.tv_sec * NSEC_PER_SEC + (uint64_t)ts.tv_nsec;
+  return ns;
+}
+
 void Client::runTx(std::vector<enso::tx_stats_t>& stats,
                    std::vector<struct EnsoTxPipe>& pipes, uint16_t coreId,
-                   uint16_t flowsPerCore) {
+                   uint16_t flowsPerCore, uint16_t rate) {
   std::cout << "Running on core " << coreId << " with pid = " << getpid()
             << std::endl;
   uint16_t startInd = coreId * flowsPerCore;
   uint16_t endInd = startInd + flowsPerCore;
+  uint64_t rate_bytes = ((uint64_t)rate * 1000000000) / 8;
+  int64_t cur_rate_bytes = rate_bytes;
+  uint64_t time_last = get_ns();
+  // Assuming that all pipes send the same batch size
+  uint64_t batch_size_on_wire = pipes[0].numRawBytes + pipes[0].numPkts * 24;
   while (ProgramConfig::keepRunning) {
     for (uint16_t i = startInd; i < endInd; i++) {
-      // send the packets
-      uint8_t* pipeBuf = pipes[i].txPipe->AllocateBuf(pipes[i].numAlignedBytes);
-      enso::memcpy_wrap_around(pipeBuf, pipes[i].buf, pipes[i].numAlignedBytes,
-                               pipes[i].bufSize);
-      pipes[i].txPipe->SendAndFree(pipes[i].numAlignedBytes);
-      // update the stats
-      stats[pipes[i].txPipe->id()].nb_bytes += pipes[i].numRawBytes;
-      stats[pipes[i].txPipe->id()].nb_pkts += pipes[i].numPkts;
+      uint64_t time_now = get_ns();
+      if (time_now > (time_last + NSEC_PER_SEC)) {
+        cur_rate_bytes = rate_bytes;
+        time_last = time_now;
+      }
+      cur_rate_bytes -= batch_size_on_wire;
+      if (cur_rate_bytes > 0) {
+        // send the packets
+        uint8_t* pipeBuf =
+            pipes[i].txPipe->AllocateBuf(pipes[i].numAlignedBytes);
+        enso::memcpy_wrap_around(pipeBuf, pipes[i].buf,
+                                 pipes[i].numAlignedBytes, pipes[i].bufSize);
+        pipes[i].txPipe->SendAndFree(pipes[i].numAlignedBytes);
+        // update the stats
+        stats[pipes[i].txPipe->id()].nb_bytes += pipes[i].numRawBytes;
+        stats[pipes[i].txPipe->id()].nb_pkts += pipes[i].numPkts;
+      }
     }
   }
 }
@@ -115,7 +139,8 @@ int Client::startClient(const ClientConfig& config) {
             << "\n"
             << "  Cores: " << config.numCores << "\n"
             << "  PCAP path: " << config.pcapPath << "\n"
-            << "  Timeout: " << config.timeout << "\n";
+            << "  Timeout: " << config.timeout << "\n"
+            << "  Rate: " << config.rate << "\n";
   std::vector<std::unique_ptr<Device>> devs(config.numCores);
   for (uint16_t i = 0; i < config.numCores; i++) {
     devs[i] = Device::Create(INTEL_FPGA_PCIE_BDF);
@@ -157,7 +182,8 @@ int Client::startClient(const ClientConfig& config) {
 
   for (uint16_t coreId = 0; coreId < config.numCores; coreId++) {
     threads.emplace_back(&Client::runTx, this, std::ref(flowStats),
-                         std::ref(txPipes), coreId, config.numFlowsPerCore);
+                         std::ref(txPipes), coreId, config.numFlowsPerCore,
+                         config.rate);
     if (enso::set_core_id(threads.back(), coreId)) {
       std::cerr << "Error setting CPU affinity" << std::endl;
       return 6;

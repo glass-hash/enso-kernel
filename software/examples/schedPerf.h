@@ -48,6 +48,7 @@ struct ClientConfig {
   uint16_t numCores;
   std::string pcapPath;
   uint16_t timeout;
+  uint16_t rate;
   uint32_t batchSize;
 };
 
@@ -138,6 +139,6 @@ class Client {
                              const u_char* pktBytes);
   void runTx(std::vector<enso::tx_stats_t>& stats,
              std::vector<struct EnsoTxPipe>& pipes, uint16_t coreId,
-             uint16_t flowsPerCore);
+             uint16_t flowsPerCore, uint16_t rate);
 };
 #endif  // SOFTWARE_EXAMPLES_SCHEDPERF_H_

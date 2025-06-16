@@ -53,8 +53,9 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
   config.mode = Mode::Unknown;
   uint16_t timeoutVal = 0;
   uint32_t batchSize = 0;
+  uint16_t rate = 0;
 
-  while ((opt = getopt(argc, argv, "s:c:t:b:")) != -1) {
+  while ((opt = getopt(argc, argv, "s:c:t:b:r:")) != -1) {
     switch (opt) {
       case 's':
         if (config.mode != Mode::Unknown) {
@@ -102,6 +103,14 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
         }
         break;
 
+      case 'r':
+        rate = atoi(optarg);
+        if ((rate == 0) || (rate > 100)) {
+          std::cerr << "Invalid rate value" << std::endl;
+          return false;
+        }
+        break;
+
       case '?':
         std::cerr << "Error: Invalid option" << std::endl;
         return false;
@@ -127,6 +136,7 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
 
     config.clientConfig.pcapPath = argv[optind + 1];
     config.clientConfig.batchSize = (batchSize == 0) ? 131072 : batchSize;
+    config.clientConfig.rate = (rate == 0) ? 100 : rate;
     optind += 2;
 
   } else if (config.mode == Mode::Server) {
