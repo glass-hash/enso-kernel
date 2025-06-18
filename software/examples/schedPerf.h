@@ -44,11 +44,11 @@ using enso::TxPipe;
 class Client;
 
 struct ClientConfig {
-  uint16_t numFlowsPerCore;
-  uint16_t numCores;
-  std::string pcapPath;
+  uint16_t numFlows;
+  uint16_t coreID;
   uint16_t timeout;
   uint16_t rate;
+  uint16_t pktSize;
   uint32_t batchSize;
 };
 
@@ -79,26 +79,6 @@ struct EnsoTxPipe {
   uint32_t bufSize;
   // Buffer with the packet
   uint8_t* buf;
-};
-
-// structure for libpcap
-struct PcapHandler {
-  PcapHandler(std::vector<std::unique_ptr<Device>>& devs_, pcap_t* pcap_,
-              Client* c_, uint16_t flowsPerCore, uint32_t _batchSize)
-      : devs(devs_),
-        pcap(pcap_),
-        client(c_),
-        numFlowsPerCore(flowsPerCore),
-        batchSize(_batchSize) {}
-  // Pointer to Enso device
-  std::vector<std::unique_ptr<Device>>& devs;
-  // Pipes to store the packets from the PCAP file
-  std::vector<struct EnsoTxPipe> txPipes;
-  // libpcap object associated with the opened PCAP file
-  pcap_t* pcap;
-  Client* client;
-  uint16_t numFlowsPerCore;
-  uint32_t batchSize;
 };
 
 class ProgramConfig {
@@ -135,10 +115,12 @@ class Client {
   explicit Client(const ClientConfig& clientConfig);
 
  private:
-  static void pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
-                             const u_char* pktBytes);
   void runTx(std::vector<enso::tx_stats_t>& stats,
-             std::vector<struct EnsoTxPipe>& pipes, uint16_t coreId,
+             std::vector<struct EnsoTxPipe>& pipes, uint16_t coreID,
              uint16_t flowsPerCore, uint16_t rate);
+  void initializeTxPipes(std::vector<struct EnsoTxPipe>& txPipes,
+                         uint16_t numFlows, uint16_t pktSize,
+                         uint32_t batchSize, const std::unique_ptr<Device>& dev,
+                         uint16_t coreID);
 };
 #endif  // SOFTWARE_EXAMPLES_SCHEDPERF_H_
