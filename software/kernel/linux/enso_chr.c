@@ -31,6 +31,8 @@
  */
 #include "enso_chr.h"
 
+#include <linux/delay.h>
+
 #include "enso_ioctl.h"
 
 /******************************************************************************
@@ -148,9 +150,19 @@ static int enso_chr_release(struct inode *inode, struct file *filp) {
   int i;
   struct chr_dev_bookkeep *chr_dev_bk;
   struct dev_bookkeep *dev_bk;
+  struct notification_buf_pair *notif_buf_pair;
 
   chr_dev_bk = filp->private_data;
   dev_bk = chr_dev_bk->dev_bk;
+  notif_buf_pair = chr_dev_bk->notif_buf_pair;
+
+  // TODO(kshitij): Figure out a better way to do this
+  // If we delete the notification buffer earlier, the scheduler thread
+  // will not end up sending the last remaining batches and the packet count
+  // on the receive side will not match
+  while (notif_buf_pair->tx_ring_head != notif_buf_pair->tx_ring_tail) {
+    msleep_interruptible(1000);
+  }
 
   if (unlikely(down_interruptible(&dev_bk->sem))) {
     printk("interrupted while attempting to obtain device semaphore.");
@@ -281,10 +293,8 @@ void enso_chr_exit(void) {
  *
  */
 static void free_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk) {
-  size_t rx_tx_buf_size = 512 * PAGE_SIZE;
   struct rx_notification *rx_notif = NULL;
   struct notification_buf_pair *notif_buf_pair = NULL;
-  unsigned int page_ind = 0;
 
   if (chr_dev_bk == NULL) {
     return;
@@ -303,9 +313,6 @@ static void free_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk) {
   printk("enso_drv: Cleaning up notif buf pair ID = %d\n", notif_buf_pair->id);
   if (notif_buf_pair->rx_buf != NULL) {
     rx_notif = notif_buf_pair->rx_buf;
-    for (; page_ind < rx_tx_buf_size; page_ind += PAGE_SIZE) {
-      ClearPageReserved(virt_to_page(((unsigned long)rx_notif) + page_ind));
-    }
     kfree(rx_notif);
   }
   if (notif_buf_pair->pending_rx_pipe_tails != NULL) {

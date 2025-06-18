@@ -287,6 +287,7 @@ struct notification_buf_pair {
   uint32_t tx_head;
   uint32_t tx_tail;
   uint32_t nb_unreported_completions;
+  int64_t credit;
 
   uint16_t next_rx_ids_head;
   uint16_t next_rx_ids_tail;
