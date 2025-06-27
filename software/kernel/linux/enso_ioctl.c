@@ -739,7 +739,7 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   }
   notif_buf_pair->tx_ring_head = 0;
   notif_buf_pair->tx_ring_tail = 0;
-  notif_buf_pair->credit = 81920;
+  notif_buf_pair->credit = 1310720;
 
   spin_lock_init(&notif_buf_pair->tx_notif_buf_lock);
   // update the notification buffer pair in dev_bk
@@ -1728,7 +1728,7 @@ int send_batch(struct notification_buf_pair *notif_buf_pair,
   uint32_t pipe_id = 0;
   uint32_t batch_size = 0;
 
-  printk("Starting enso_sched\n");
+  printk("Starting enso_sched FIFO\n");
   while (!kthread_should_stop()) {
     // dequeue an element from the ring buffer and send it
     notif_buf_pair = dev_bk->notif_buf_pairs[notif_buf_id];
@@ -1752,7 +1752,7 @@ int send_batch(struct notification_buf_pair *notif_buf_pair,
 }*/
 
 // FQ
-int enso_sched(void *data) {
+/*int enso_sched(void *data) {
   struct dev_bookkeep *dev_bk = (struct dev_bookkeep *)data;
   struct notification_buf_pair *notif_buf_pair = NULL;
   struct tx_send_ring_element cur_batch;
@@ -1760,7 +1760,7 @@ int enso_sched(void *data) {
   uint32_t pipe_id = 0;
   uint32_t batch_size = 0;
 
-  printk("Starting enso_sched\n");
+  printk("Starting enso_sched FQ\n");
   while (!kthread_should_stop()) {
     // dequeue an element from the ring buffer and send it
     notif_buf_pair = dev_bk->notif_buf_pairs[notif_buf_id];
@@ -1776,7 +1776,45 @@ int enso_sched(void *data) {
               (notif_buf_pair->tx_ring_head + 1) % TX_APP_SCHED_RING_SIZE;
           notif_buf_pair->credit -= batch_size;
         } else {
-          notif_buf_pair->credit = 16384;
+          notif_buf_pair->credit = 262144;
+          notif_buf_id = (notif_buf_id + 1) % 8;
+        }
+      }
+    } else {
+      notif_buf_id = (notif_buf_id + 1) % 8;
+    }
+    yield();
+  }
+  printk("enso_sched exiting\n");
+  return 0;
+}*/
+
+// WFQ
+int enso_sched(void *data) {
+  struct dev_bookkeep *dev_bk = (struct dev_bookkeep *)data;
+  struct notification_buf_pair *notif_buf_pair = NULL;
+  struct tx_send_ring_element cur_batch;
+  uint32_t notif_buf_id = 0;
+  uint32_t pipe_id = 0;
+  uint32_t batch_size = 0;
+
+  printk("Starting enso_sched WFQ\n");
+  while (!kthread_should_stop()) {
+    // dequeue an element from the ring buffer and send it
+    notif_buf_pair = dev_bk->notif_buf_pairs[notif_buf_id];
+    if (notif_buf_pair) {
+      if (notif_buf_pair->tx_ring_head != notif_buf_pair->tx_ring_tail) {
+        cur_batch = notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_head];
+        if (notif_buf_pair->credit > 0) {
+          pipe_id = cur_batch.ioctl_params.id;
+          batch_size = cur_batch.ioctl_params.len;
+          send_batch(notif_buf_pair, &cur_batch.ioctl_params);
+          // increment head
+          notif_buf_pair->tx_ring_head =
+              (notif_buf_pair->tx_ring_head + 1) % TX_APP_SCHED_RING_SIZE;
+          notif_buf_pair->credit -= batch_size;
+        } else {
+          notif_buf_pair->credit = 262144 + 262144 * notif_buf_id;
           notif_buf_id = (notif_buf_id + 1) % 8;
         }
       }

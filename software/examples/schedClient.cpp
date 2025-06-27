@@ -212,7 +212,9 @@ int Client::startClient(const ClientConfig& config) {
     totalBytes += flowStats[i].nb_bytes;
     totalPkts += flowStats[i].nb_pkts;
   }
-  std::ofstream statsFile("schedTxStats.csv");
+  std::string fileName =
+      "schedTxStats_" + std::to_string(config.coreID) + ".csv";
+  std::ofstream statsFile(fileName);
   statsFile << totalBytes << "," << totalPkts << std::endl;
   statsFile.close();
 
