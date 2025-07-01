@@ -160,9 +160,9 @@ static int enso_chr_release(struct inode *inode, struct file *filp) {
   // If we delete the notification buffer earlier, the scheduler thread
   // will not end up sending the last remaining batches and the packet count
   // on the receive side will not match
-  while (notif_buf_pair->tx_ring_head != notif_buf_pair->tx_ring_tail) {
-    msleep_interruptible(1000);
-  }
+  // while (notif_buf_pair->tx_ring_head != notif_buf_pair->tx_ring_tail) {
+  //   msleep_interruptible(1000);
+  // }
 
   if (unlikely(down_interruptible(&dev_bk->sem))) {
     printk("interrupted while attempting to obtain device semaphore.");
@@ -295,6 +295,7 @@ void enso_chr_exit(void) {
 static void free_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk) {
   struct rx_notification *rx_notif = NULL;
   struct notification_buf_pair *notif_buf_pair = NULL;
+  unsigned int ind = 0;
 
   if (chr_dev_bk == NULL) {
     return;
@@ -321,7 +322,10 @@ static void free_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk) {
   if (notif_buf_pair->wrap_tracker != NULL) {
     kfree(notif_buf_pair->wrap_tracker);
   }
-  kfree(notif_buf_pair->tx_send_ring);
+  for (; ind < 1024; ind++) {
+    kfree(notif_buf_pair->tx_send_rings[ind]->rb);
+  }
+  kfree(notif_buf_pair->tx_send_rings);
   kfree(notif_buf_pair);
   chr_dev_bk->notif_buf_pair = NULL;
 }

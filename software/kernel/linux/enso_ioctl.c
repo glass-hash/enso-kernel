@@ -622,6 +622,7 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   struct queue_regs *nbp_q_regs;
   size_t rx_tx_buf_size = 512 * PAGE_SIZE;
   uint64_t rx_buf_phys_addr;
+  unsigned int ind = 0;
 
   notif_buf_pair = chr_dev_bk->notif_buf_pair;
   dev_bk = chr_dev_bk->dev_bk;
@@ -731,14 +732,30 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   enso_io_write_32((uint32_t)(rx_buf_phys_addr >> 32),
                    &nbp_q_regs->tx_mem_high);
 
-  notif_buf_pair->tx_send_ring = kzalloc(
-      TX_APP_SCHED_RING_SIZE * sizeof(struct tx_send_ring_element), GFP_KERNEL);
-  if (notif_buf_pair->tx_send_ring == NULL) {
-    printk("couldn't create send ring buffer\n");
+  // TODO(kshitij): Handle failed allocation cases
+  notif_buf_pair->tx_send_rings =
+      kzalloc(1024 * sizeof(struct tx_send_ring_head *), GFP_KERNEL);
+  if (notif_buf_pair->tx_send_rings == NULL) {
+    printk("couldn't create send ring buffers\n");
     return -ENOMEM;
   }
-  notif_buf_pair->tx_ring_head = 0;
-  notif_buf_pair->tx_ring_tail = 0;
+  for (; ind < 1024; ind++) {
+    notif_buf_pair->tx_send_rings[ind] =
+        kzalloc(sizeof(struct tx_send_ring_head), GFP_KERNEL);
+    if (notif_buf_pair->tx_send_rings[ind] == NULL) {
+      printk("couldn't create send ring buffer\n");
+      return -ENOMEM;
+    }
+    notif_buf_pair->tx_send_rings[ind]->rb =
+        kzalloc(TX_APP_SCHED_RING_SIZE * sizeof(struct tx_send_ring_element),
+                GFP_KERNEL);
+    if (notif_buf_pair->tx_send_rings[ind]->rb == NULL) {
+      printk("couldn't create send ring buffer\n");
+      return -ENOMEM;
+    }
+    notif_buf_pair->tx_send_rings[ind]->tx_ring_head = 0;
+    notif_buf_pair->tx_send_rings[ind]->tx_ring_tail = 0;
+  }
   notif_buf_pair->credit = 1310720;
 
   spin_lock_init(&notif_buf_pair->tx_notif_buf_lock);
@@ -762,6 +779,8 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                          unsigned long uarg) {
   struct enso_send_tx_pipe_params stpp;
   struct notification_buf_pair *notif_buf_pair = chr_dev_bk->notif_buf_pair;
+  uint32_t tx_pipe_id;
+  struct tx_send_ring_head *app_sched_rb;
   if (copy_from_user(&stpp, (void __user *)uarg, sizeof(stpp))) {
     printk("couldn't copy arg from user.");
     return -EFAULT;
@@ -772,17 +791,26 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     return -EFAULT;
   }
 
-  if (((notif_buf_pair->tx_ring_tail + 1) % TX_APP_SCHED_RING_SIZE) ==
-      notif_buf_pair->tx_ring_head) {
+  tx_pipe_id = stpp.id;
+  app_sched_rb = notif_buf_pair->tx_send_rings[tx_pipe_id];
+  if (app_sched_rb == NULL) {
+    printk("App sched RB not found");
+    return -EFAULT;
+  }
+  if (app_sched_rb->rb == NULL) {
+    printk("App sched RB not found");
+    return -EFAULT;
+  }
+  if (((app_sched_rb->tx_ring_tail + 1) % TX_APP_SCHED_RING_SIZE) ==
+      app_sched_rb->tx_ring_head) {
     // buffer is full
     return -1;
   }
-  notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_tail].ioctl_params =
-      stpp;
-  notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_tail].notif_buf_id =
+  app_sched_rb->rb[app_sched_rb->tx_ring_tail].ioctl_params = stpp;
+  app_sched_rb->rb[app_sched_rb->tx_ring_head].notif_buf_id =
       notif_buf_pair->id;
-  notif_buf_pair->tx_ring_tail =
-      (notif_buf_pair->tx_ring_tail + 1) % TX_APP_SCHED_RING_SIZE;
+  app_sched_rb->tx_ring_tail =
+      (app_sched_rb->tx_ring_tail + 1) % TX_APP_SCHED_RING_SIZE;
   return 0;
 }
 
@@ -1720,28 +1748,34 @@ int send_batch(struct notification_buf_pair *notif_buf_pair,
 }
 
 // FIFO
-/*int enso_sched(void *data) {
+// Ideally we should be looping through flows and not notification buffers
+// Need to figure out a better way to do this
+int enso_sched(void *data) {
   struct dev_bookkeep *dev_bk = (struct dev_bookkeep *)data;
   struct notification_buf_pair *notif_buf_pair = NULL;
+  struct tx_send_ring_head *app_sched_rb;
   struct tx_send_ring_element cur_batch;
   uint32_t notif_buf_id = 0;
   uint32_t pipe_id = 0;
   uint32_t batch_size = 0;
+  uint32_t tx_pipe_id = 0;
 
   printk("Starting enso_sched FIFO\n");
   while (!kthread_should_stop()) {
     // dequeue an element from the ring buffer and send it
     notif_buf_pair = dev_bk->notif_buf_pairs[notif_buf_id];
     if (notif_buf_pair) {
-      if (notif_buf_pair->tx_ring_head != notif_buf_pair->tx_ring_tail) {
-        cur_batch =
-            notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_head];
-        pipe_id = cur_batch.ioctl_params.id;
-        batch_size = cur_batch.ioctl_params.len;
-        send_batch(notif_buf_pair, &cur_batch.ioctl_params);
-        // increment head
-        notif_buf_pair->tx_ring_head =
-            (notif_buf_pair->tx_ring_head + 1) % TX_APP_SCHED_RING_SIZE;
+      for (tx_pipe_id = 0; tx_pipe_id < 1024; tx_pipe_id++) {
+        app_sched_rb = notif_buf_pair->tx_send_rings[tx_pipe_id];
+        if (app_sched_rb->tx_ring_head != app_sched_rb->tx_ring_tail) {
+          cur_batch = app_sched_rb->rb[app_sched_rb->tx_ring_head];
+          pipe_id = cur_batch.ioctl_params.id;
+          batch_size = cur_batch.ioctl_params.len;
+          send_batch(notif_buf_pair, &cur_batch.ioctl_params);
+          // increment head
+          app_sched_rb->tx_ring_head =
+              (app_sched_rb->tx_ring_head + 1) % TX_APP_SCHED_RING_SIZE;
+        }
       }
     }
     notif_buf_id = (notif_buf_id + 1) % 8;
@@ -1749,7 +1783,7 @@ int send_batch(struct notification_buf_pair *notif_buf_pair,
   }
   printk("enso_sched exiting\n");
   return 0;
-}*/
+}
 
 // FQ
 /*int enso_sched(void *data) {
@@ -1790,7 +1824,7 @@ int send_batch(struct notification_buf_pair *notif_buf_pair,
 }*/
 
 // WFQ
-int enso_sched(void *data) {
+/*int enso_sched(void *data) {
   struct dev_bookkeep *dev_bk = (struct dev_bookkeep *)data;
   struct notification_buf_pair *notif_buf_pair = NULL;
   struct tx_send_ring_element cur_batch;
@@ -1825,4 +1859,4 @@ int enso_sched(void *data) {
   }
   printk("enso_sched exiting\n");
   return 0;
-}
+}*/

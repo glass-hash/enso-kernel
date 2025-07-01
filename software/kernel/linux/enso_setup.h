@@ -60,7 +60,7 @@
 #define BATCH_SIZE 64
 #define COMPLETIONS_BATCH_SIZE 64
 #define SCHED_CORE_NUM 8
-#define TX_APP_SCHED_RING_SIZE NOTIFICATION_BUF_SIZE
+#define TX_APP_SCHED_RING_SIZE 1024
 
 // These determine the maximum number of notification buffers and enso pipes.
 // These macros also exist in hardware and **must be kept in sync**. Update the
@@ -89,6 +89,12 @@ struct enso_send_tx_pipe_params {
 struct tx_send_ring_element {
   struct enso_send_tx_pipe_params ioctl_params;
   uint32_t notif_buf_id;
+} __attribute__((packed));
+
+struct tx_send_ring_head {
+  uint16_t tx_ring_head;
+  uint16_t tx_ring_tail;
+  struct tx_send_ring_element *rb;
 } __attribute__((packed));
 
 /**
@@ -278,7 +284,7 @@ struct notification_buf_pair {
   uint32_t *next_rx_pipe_ids;
   uint8_t *wrap_tracker;
   uint32_t *pending_rx_pipe_tails;
-  struct tx_send_ring_element *tx_send_ring;
+  struct tx_send_ring_head **tx_send_rings;
 
   uint64_t tx_full_cnt;
 
@@ -291,9 +297,6 @@ struct notification_buf_pair {
 
   uint16_t next_rx_ids_head;
   uint16_t next_rx_ids_tail;
-  uint16_t tx_ring_head;
-  uint16_t tx_ring_tail;
-
   spinlock_t tx_notif_buf_lock;
 };
 
