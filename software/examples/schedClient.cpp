@@ -58,8 +58,7 @@ Client::Client(const ClientConfig& config) { startClient(config); }
 
 void Client::initializeTxPipes(std::vector<struct EnsoTxPipe>& txPipes,
                                uint16_t numFlows, uint16_t pktSize,
-                               uint32_t batchSize,
-                               const std::unique_ptr<Device>& dev,
+                               uint32_t batchSize, std::unique_ptr<Device>& dev,
                                uint16_t coreID) {
   // We want to have one flow per tx pipe. During testing, the program will
   // be used with the same number of flows but different core IDs.
@@ -114,7 +113,7 @@ void Client::initializeTxPipes(std::vector<struct EnsoTxPipe>& txPipes,
     TxPipe* pipe = dev->AllocateTxPipe();
     if (!pipe) {
       std::cerr << "Problem creating TX pipe" << std::endl;
-      exit(2);
+      cleanupAndExit(txPipes, dev);
     }
     struct EnsoTxPipe etp(pipe, pktBuf);
     etp.bufSize = pktAlignedSize;
@@ -123,6 +122,17 @@ void Client::initializeTxPipes(std::vector<struct EnsoTxPipe>& txPipes,
     etp.numPkts = numPktsInBatch;
     txPipes.push_back(etp);
   }
+}
+
+void Client::cleanupAndExit(std::vector<struct EnsoTxPipe>& txPipes,
+                            std::unique_ptr<Device>& dev) {
+  for (auto pipe : txPipes) {
+    if (pipe.buf) {
+      free(pipe.buf);
+    }
+  }
+  dev.reset();
+  exit(2);
 }
 
 static inline uint64_t get_ns(void) {

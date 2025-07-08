@@ -120,7 +120,9 @@ class Client {
              uint16_t flowsPerCore, uint16_t rate);
   void initializeTxPipes(std::vector<struct EnsoTxPipe>& txPipes,
                          uint16_t numFlows, uint16_t pktSize,
-                         uint32_t batchSize, const std::unique_ptr<Device>& dev,
+                         uint32_t batchSize, std::unique_ptr<Device>& dev,
                          uint16_t coreID);
+  void cleanupAndExit(std::vector<struct EnsoTxPipe>& txPipes,
+                      std::unique_ptr<Device>& dev);
 };
 #endif  // SOFTWARE_EXAMPLES_SCHEDPERF_H_
