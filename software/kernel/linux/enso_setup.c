@@ -50,7 +50,7 @@ extern struct enso_intel_pcie* get_intel_fpga_pcie_addr(void);
  *
  * */
 static __init int enso_init(void) {
-  int ret, ind;
+  int ret, ind, failed_ind;
   struct dev_bookkeep* dev_bk;
 
   global_bk.intel_enso = NULL;
@@ -90,18 +90,19 @@ static __init int enso_init(void) {
     goto failed_rx_pipe_id_status_alloc;
   }
 
-  dev_bk->tx_pipe_id_status = kzalloc(MAX_NB_FLOWS / 8, GFP_KERNEL);
+  dev_bk->tx_pipe_id_status = kzalloc(MAX_NB_TX_PIPES_SCHED / 8, GFP_KERNEL);
   if (dev_bk->tx_pipe_id_status == NULL) {
     printk("couldn't create pipe status for device\n");
     goto failed_tx_pipe_id_status_alloc;
   }
 
-  dev_bk->tx_completions = kzalloc(MAX_NB_FLOWS * sizeof(atomic_t), GFP_KERNEL);
+  dev_bk->tx_completions =
+      kzalloc(MAX_NB_TX_PIPES_SCHED * sizeof(atomic_t), GFP_KERNEL);
   if (dev_bk->tx_completions == NULL) {
     printk("couldn't create completion atomic buffer\n");
     goto failed_tx_completions_alloc;
   }
-  for (ind = 0; ind < MAX_NB_FLOWS; ind++) {
+  for (ind = 0; ind < MAX_NB_TX_PIPES_SCHED; ind++) {
     atomic_set(&dev_bk->tx_completions[ind], 0);
   }
 
@@ -110,6 +111,31 @@ static __init int enso_init(void) {
   if (dev_bk->notif_buf_pairs == NULL) {
     printk("couldn't create notif_buf_pairs\n");
     goto failed_notif_buf_pair_alloc;
+  }
+
+  dev_bk->tx_send_rings = kzalloc(
+      MAX_NB_TX_PIPES_SCHED * sizeof(struct tx_send_ring_head*), GFP_KERNEL);
+  if (dev_bk->tx_send_rings == NULL) {
+    printk("couldn't create send ring buffers\n");
+    goto failed_tx_send_rings_alloc;
+  }
+  for (ind = 0; ind < MAX_NB_TX_PIPES_SCHED; ind++) {
+    dev_bk->tx_send_rings[ind] =
+        kzalloc(sizeof(struct tx_send_ring_head), GFP_KERNEL);
+    if (dev_bk->tx_send_rings[ind] == NULL) {
+      printk("couldn't create send ring buffer\n");
+      goto failed_tx_send_ring_alloc;
+    }
+    dev_bk->tx_send_rings[ind]->rb =
+        kzalloc(TX_APP_SCHED_RING_SIZE * sizeof(struct tx_send_ring_element),
+                GFP_KERNEL);
+    if (dev_bk->tx_send_rings[ind]->rb == NULL) {
+      printk("couldn't create send ring buffer's rb\n");
+      goto failed_tx_send_ring_alloc;
+    }
+    dev_bk->tx_send_rings[ind]->tx_ring_head = 0;
+    dev_bk->tx_send_rings[ind]->tx_ring_tail = 0;
+    dev_bk->tx_send_rings[ind]->credit = 0;
   }
 
   spin_lock_init(&dev_bk->lock);
@@ -121,6 +147,14 @@ static __init int enso_init(void) {
 
   return 0;
 
+failed_tx_send_ring_alloc:
+  for (failed_ind = 0; failed_ind < ind; failed_ind++) {
+    kfree(dev_bk->tx_send_rings[failed_ind]);
+    kfree(dev_bk->tx_send_rings[failed_ind]->rb);
+  }
+  kfree(dev_bk->tx_send_rings);
+failed_tx_send_rings_alloc:
+  kfree(dev_bk->notif_buf_pairs);
 failed_notif_buf_pair_alloc:
   kfree(dev_bk->tx_completions);
 failed_tx_completions_alloc:
@@ -139,11 +173,17 @@ module_init(enso_init);
  * @brief: Unregisters the Enso driver.
  * */
 static void enso_exit(void) {
+  uint16_t ind;
   if (global_bk.dev_bk->sched_run) {
     kthread_stop(global_bk.dev_bk->enso_sched_thread);
   }
   enso_chr_exit();
   global_bk.intel_enso = NULL;
+  for (ind = 0; ind < MAX_NB_TX_PIPES_SCHED; ind++) {
+    kfree(global_bk.dev_bk->tx_send_rings[ind]->rb);
+    kfree(global_bk.dev_bk->tx_send_rings[ind]);
+  }
+  kfree(global_bk.dev_bk->tx_send_rings);
   kfree(global_bk.dev_bk->notif_buf_pairs);
   kfree(global_bk.dev_bk->tx_completions);
   kfree(global_bk.dev_bk->tx_pipe_id_status);

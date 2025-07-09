@@ -107,7 +107,8 @@ static int enso_chr_open(struct inode *inode, struct file *filp) {
     goto failed_rx_pipe_id_status_alloc;
   }
 
-  chr_dev_bk->tx_pipe_id_status = kzalloc(MAX_NB_FLOWS / 8, GFP_KERNEL);
+  chr_dev_bk->tx_pipe_id_status =
+      kzalloc(MAX_NB_TX_PIPES_SCHED / 8, GFP_KERNEL);
   if (chr_dev_bk->tx_pipe_id_status == NULL) {
     printk("couldn't create pipe status for device\n");
     goto failed_tx_pipe_id_status_alloc;
@@ -176,7 +177,7 @@ static int enso_chr_release(struct inode *inode, struct file *filp) {
   for (i = 0; i < MAX_NB_FLOWS / 8; ++i) {
     dev_bk->rx_pipe_id_status[i] &= ~(chr_dev_bk->rx_pipe_id_status[i]);
   }
-  for (i = 0; i < MAX_NB_FLOWS / 8; ++i) {
+  for (i = 0; i < MAX_NB_TX_PIPES_SCHED / 8; ++i) {
     dev_bk->tx_pipe_id_status[i] &= ~(chr_dev_bk->tx_pipe_id_status[i]);
   }
 
@@ -295,7 +296,6 @@ void enso_chr_exit(void) {
 static void free_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk) {
   struct rx_notification *rx_notif = NULL;
   struct notification_buf_pair *notif_buf_pair = NULL;
-  unsigned int ind = 0;
 
   if (chr_dev_bk == NULL) {
     return;
@@ -322,10 +322,6 @@ static void free_notif_buf_pair(struct chr_dev_bookkeep *chr_dev_bk) {
   if (notif_buf_pair->wrap_tracker != NULL) {
     kfree(notif_buf_pair->wrap_tracker);
   }
-  for (; ind < 1024; ind++) {
-    kfree(notif_buf_pair->tx_send_rings[ind]->rb);
-  }
-  kfree(notif_buf_pair->tx_send_rings);
   kfree(notif_buf_pair);
   chr_dev_bk->notif_buf_pair = NULL;
 }

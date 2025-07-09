@@ -622,7 +622,6 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   struct queue_regs *nbp_q_regs;
   size_t rx_tx_buf_size = 512 * PAGE_SIZE;
   uint64_t rx_buf_phys_addr;
-  unsigned int ind = 0;
 
   notif_buf_pair = chr_dev_bk->notif_buf_pair;
   dev_bk = chr_dev_bk->dev_bk;
@@ -732,32 +731,6 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
   enso_io_write_32((uint32_t)(rx_buf_phys_addr >> 32),
                    &nbp_q_regs->tx_mem_high);
 
-  // TODO(kshitij): Handle failed allocation cases
-  notif_buf_pair->tx_send_rings =
-      kzalloc(1024 * sizeof(struct tx_send_ring_head *), GFP_KERNEL);
-  if (notif_buf_pair->tx_send_rings == NULL) {
-    printk("couldn't create send ring buffers\n");
-    return -ENOMEM;
-  }
-  for (; ind < 1024; ind++) {
-    notif_buf_pair->tx_send_rings[ind] =
-        kzalloc(sizeof(struct tx_send_ring_head), GFP_KERNEL);
-    if (notif_buf_pair->tx_send_rings[ind] == NULL) {
-      printk("couldn't create send ring buffer\n");
-      return -ENOMEM;
-    }
-    notif_buf_pair->tx_send_rings[ind]->rb =
-        kzalloc(TX_APP_SCHED_RING_SIZE * sizeof(struct tx_send_ring_element),
-                GFP_KERNEL);
-    if (notif_buf_pair->tx_send_rings[ind]->rb == NULL) {
-      printk("couldn't create send ring buffer\n");
-      return -ENOMEM;
-    }
-    notif_buf_pair->tx_send_rings[ind]->tx_ring_head = 0;
-    notif_buf_pair->tx_send_rings[ind]->tx_ring_tail = 0;
-  }
-  notif_buf_pair->credit = 1310720;
-
   spin_lock_init(&notif_buf_pair->tx_notif_buf_lock);
   // update the notification buffer pair in dev_bk
   dev_bk->notif_buf_pairs[notif_buf_pair->id] = notif_buf_pair;
@@ -778,6 +751,7 @@ static long alloc_notif_buffer(struct chr_dev_bookkeep *chr_dev_bk,
 static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                          unsigned long uarg) {
   struct enso_send_tx_pipe_params stpp;
+  struct dev_bookkeep *dev_bk = chr_dev_bk->dev_bk;
   struct notification_buf_pair *notif_buf_pair = chr_dev_bk->notif_buf_pair;
   uint32_t tx_pipe_id;
   struct tx_send_ring_head *app_sched_rb;
@@ -792,13 +766,13 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   }
 
   tx_pipe_id = stpp.id;
-  app_sched_rb = notif_buf_pair->tx_send_rings[tx_pipe_id];
+  app_sched_rb = dev_bk->tx_send_rings[tx_pipe_id];
   if (app_sched_rb == NULL) {
-    printk("App sched RB not found");
+    printk("App sched RB not found for pipe id = %u\n", tx_pipe_id);
     return -EFAULT;
   }
   if (app_sched_rb->rb == NULL) {
-    printk("App sched RB not found");
+    printk("App sched RB RB not found for pipe id = %u\n", tx_pipe_id);
     return -EFAULT;
   }
   if (((app_sched_rb->tx_ring_tail + 1) % TX_APP_SCHED_RING_SIZE) ==
@@ -1303,9 +1277,12 @@ static long alloc_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
   int i = 0;
   int32_t pipe_id = -1;
   struct dev_bookkeep *dev_bk;
+  struct notification_buf_pair *notif_buf_pair;
 
   dev_bk = chr_dev_bk->dev_bk;
-  for (i = 0; i < MAX_NB_FLOWS / 8; ++i) {
+  notif_buf_pair = chr_dev_bk->notif_buf_pair;
+
+  for (i = 0; i < MAX_NB_TX_PIPES_SCHED / 8; ++i) {
     int32_t set_pipe_id = 0;
     uint8_t set = dev_bk->tx_pipe_id_status[i];
     while (set & 0x1) {
@@ -1325,6 +1302,7 @@ static long alloc_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
 
   atomic_set(&dev_bk->tx_completions[pipe_id], 0);
   dev_bk->nb_tx_pipes++;
+  dev_bk->tx_send_rings[pipe_id]->credit = 327680;
 
   if (pipe_id < 0) {
     printk("couldn't allocate pipe id\n");
@@ -1354,11 +1332,13 @@ static long free_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
   int32_t i, j;
   int32_t pipe_id = (int32_t)uarg;
   struct dev_bookkeep *dev_bk;
+  struct notification_buf_pair *notif_buf_pair;
 
   dev_bk = chr_dev_bk->dev_bk;
+  notif_buf_pair = chr_dev_bk->notif_buf_pair;
 
   // Check that the buffer ID is valid.
-  if (pipe_id < 0 || pipe_id >= MAX_NB_FLOWS) {
+  if (pipe_id < 0 || pipe_id >= MAX_NB_TX_PIPES_SCHED) {
     printk("Invalid pipe ID\n");
     return -EINVAL;
   }
@@ -1747,81 +1727,75 @@ int send_batch(struct notification_buf_pair *notif_buf_pair,
   return 0;
 }
 
-// FIFO
-// Ideally we should be looping through flows and not notification buffers
-// Need to figure out a better way to do this
-int enso_sched(void *data) {
+// FIFO with queue per flow
+/*int enso_sched(void *data) {
   struct dev_bookkeep *dev_bk = (struct dev_bookkeep *)data;
   struct notification_buf_pair *notif_buf_pair = NULL;
-  struct tx_send_ring_head *app_sched_rb;
+  struct tx_send_ring_head *app_sched_rb_head;
   struct tx_send_ring_element cur_batch;
   uint32_t notif_buf_id = 0;
-  uint32_t pipe_id = 0;
-  uint32_t batch_size = 0;
   uint32_t tx_pipe_id = 0;
 
   printk("Starting enso_sched FIFO\n");
   while (!kthread_should_stop()) {
     // dequeue an element from the ring buffer and send it
-    notif_buf_pair = dev_bk->notif_buf_pairs[notif_buf_id];
-    if (notif_buf_pair) {
-      for (tx_pipe_id = 0; tx_pipe_id < 1024; tx_pipe_id++) {
-        app_sched_rb = notif_buf_pair->tx_send_rings[tx_pipe_id];
-        if (app_sched_rb->tx_ring_head != app_sched_rb->tx_ring_tail) {
-          cur_batch = app_sched_rb->rb[app_sched_rb->tx_ring_head];
-          pipe_id = cur_batch.ioctl_params.id;
-          batch_size = cur_batch.ioctl_params.len;
+    app_sched_rb_head = dev_bk->tx_send_rings[tx_pipe_id];
+    if (app_sched_rb_head->tx_ring_head != app_sched_rb_head->tx_ring_tail) {
+      cur_batch = app_sched_rb_head->rb[app_sched_rb_head->tx_ring_head];
+      notif_buf_id = cur_batch.notif_buf_id;
+      notif_buf_pair = dev_bk->notif_buf_pairs[notif_buf_id];
+      if (notif_buf_pair) {
           send_batch(notif_buf_pair, &cur_batch.ioctl_params);
           // increment head
-          app_sched_rb->tx_ring_head =
-              (app_sched_rb->tx_ring_head + 1) % TX_APP_SCHED_RING_SIZE;
-        }
+          app_sched_rb_head->tx_ring_head =
+              (app_sched_rb_head->tx_ring_head + 1) % TX_APP_SCHED_RING_SIZE;
       }
     }
-    notif_buf_id = (notif_buf_id + 1) % 8;
-    yield();
-  }
-  printk("enso_sched exiting\n");
-  return 0;
-}
-
-// FQ
-/*int enso_sched(void *data) {
-  struct dev_bookkeep *dev_bk = (struct dev_bookkeep *)data;
-  struct notification_buf_pair *notif_buf_pair = NULL;
-  struct tx_send_ring_element cur_batch;
-  uint32_t notif_buf_id = 0;
-  uint32_t pipe_id = 0;
-  uint32_t batch_size = 0;
-
-  printk("Starting enso_sched FQ\n");
-  while (!kthread_should_stop()) {
-    // dequeue an element from the ring buffer and send it
-    notif_buf_pair = dev_bk->notif_buf_pairs[notif_buf_id];
-    if (notif_buf_pair) {
-      if (notif_buf_pair->tx_ring_head != notif_buf_pair->tx_ring_tail) {
-        cur_batch = notif_buf_pair->tx_send_ring[notif_buf_pair->tx_ring_head];
-        if (notif_buf_pair->credit > 0) {
-          pipe_id = cur_batch.ioctl_params.id;
-          batch_size = cur_batch.ioctl_params.len;
-          send_batch(notif_buf_pair, &cur_batch.ioctl_params);
-          // increment head
-          notif_buf_pair->tx_ring_head =
-              (notif_buf_pair->tx_ring_head + 1) % TX_APP_SCHED_RING_SIZE;
-          notif_buf_pair->credit -= batch_size;
-        } else {
-          notif_buf_pair->credit = 262144;
-          notif_buf_id = (notif_buf_id + 1) % 8;
-        }
-      }
-    } else {
-      notif_buf_id = (notif_buf_id + 1) % 8;
-    }
+    tx_pipe_id = (tx_pipe_id + 1) % 16;
     yield();
   }
   printk("enso_sched exiting\n");
   return 0;
 }*/
+
+// FQ
+int enso_sched(void *data) {
+  struct dev_bookkeep *dev_bk = (struct dev_bookkeep *)data;
+  struct notification_buf_pair *notif_buf_pair = NULL;
+  struct tx_send_ring_head *app_sched_rb_head;
+  struct tx_send_ring_element cur_batch;
+  uint32_t notif_buf_id = 0;
+  uint32_t tx_pipe_id = 0;
+  uint32_t batch_size = 0;
+
+  printk("Starting enso_sched FQ\n");
+  while (!kthread_should_stop()) {
+    // dequeue an element from the ring buffer and send it
+    app_sched_rb_head = dev_bk->tx_send_rings[tx_pipe_id];
+    if (app_sched_rb_head->tx_ring_head != app_sched_rb_head->tx_ring_tail) {
+      if (app_sched_rb_head->credit > 0) {
+        cur_batch = app_sched_rb_head->rb[app_sched_rb_head->tx_ring_head];
+        notif_buf_id = cur_batch.notif_buf_id;
+        notif_buf_pair = dev_bk->notif_buf_pairs[notif_buf_id];
+        if (notif_buf_pair) {
+          send_batch(notif_buf_pair, &cur_batch.ioctl_params);
+          // increment head
+          app_sched_rb_head->tx_ring_head =
+              (app_sched_rb_head->tx_ring_head + 1) % TX_APP_SCHED_RING_SIZE;
+          app_sched_rb_head->credit -= batch_size;
+        }
+      } else {
+        app_sched_rb_head->credit += 65536;
+        tx_pipe_id = (tx_pipe_id + 1) % MAX_NB_TX_PIPES_SCHED;
+      }
+    } else {
+      tx_pipe_id = (tx_pipe_id + 1) % MAX_NB_TX_PIPES_SCHED;
+    }
+    yield();
+  }
+  printk("enso_sched exiting\n");
+  return 0;
+}
 
 // WFQ
 /*int enso_sched(void *data) {

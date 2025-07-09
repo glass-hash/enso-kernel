@@ -69,6 +69,8 @@
 #define MAX_NB_APPS 1024
 #define MAX_NB_FLOWS 8192
 
+#define MAX_NB_TX_PIPES_SCHED 1024
+
 /**
  * @struct enso_intel_pcie
  *
@@ -95,6 +97,7 @@ struct tx_send_ring_head {
   uint16_t tx_ring_head;
   uint16_t tx_ring_tail;
   struct tx_send_ring_element *rb;
+  int64_t credit;
 } __attribute__((packed));
 
 /**
@@ -145,6 +148,7 @@ struct dev_bookkeep {
   atomic_t *tx_completions;
   struct task_struct *enso_sched_thread;
   struct notification_buf_pair **notif_buf_pairs;
+  struct tx_send_ring_head **tx_send_rings;
   uint32_t chr_open_cnt;
   uint32_t nb_fb_queues;
   uint32_t nb_tx_pipes;
@@ -284,7 +288,6 @@ struct notification_buf_pair {
   uint32_t *next_rx_pipe_ids;
   uint8_t *wrap_tracker;
   uint32_t *pending_rx_pipe_tails;
-  struct tx_send_ring_head **tx_send_rings;
 
   uint64_t tx_full_cnt;
 
@@ -293,7 +296,6 @@ struct notification_buf_pair {
   uint32_t tx_head;
   uint32_t tx_tail;
   uint32_t nb_unreported_completions;
-  int64_t credit;
 
   uint16_t next_rx_ids_head;
   uint16_t next_rx_ids_tail;
