@@ -85,6 +85,18 @@ void* get_huge_page(const std::string& path, size_t size, bool mirror) {
     size = kBufPageSize;
   }
 
+  size_t mmapSize = size;
+
+  if (mirror) {
+    // In case of RxTx Pipes, we map double the size of the hugepage
+    // An important thing to note here is that although it ends up mapping
+    // twice the amount of memory, the hugepages counted are still 1. So if we
+    // allocate 16K hugepages and map 8K like this, /proc/meminfo will show
+    // 8K pages as free but we will not be able to map more pages without
+    // increasing the allocation
+    mmapSize = size * 2;
+  }
+
   if (mirror && size % kBufPageSize) {
     std::cerr << "Mirror huge pages must be a multiple of huge page size"
               << std::endl;
@@ -107,7 +119,7 @@ void* get_huge_page(const std::string& path, size_t size, bool mirror) {
     return nullptr;
   }
 
-  void* virt_addr = (void*)mmap(nullptr, size * 2, PROT_READ | PROT_WRITE,
+  void* virt_addr = (void*)mmap(nullptr, mmapSize, PROT_READ | PROT_WRITE,
                                 MAP_SHARED | MAP_HUGETLB, fd, 0);
 
   if (virt_addr == (void*)-1) {
@@ -115,22 +127,6 @@ void* get_huge_page(const std::string& path, size_t size, bool mirror) {
     close(fd);
     unlink(path.c_str());
     return nullptr;
-  }
-
-  if (mirror) {
-    // Allocate same huge page at the end of the last one.
-    void* ret =
-        (void*)mmap((uint8_t*)virt_addr + size, size, PROT_READ | PROT_WRITE,
-                    MAP_FIXED | MAP_SHARED | MAP_HUGETLB, fd, 0);
-
-    if (ret == (void*)-1) {
-      std::cerr << "(" << errno << ") Could not mmap second huge page"
-                << std::endl;
-      close(fd);
-      unlink(path.c_str());
-      free(virt_addr);
-      return nullptr;
-    }
   }
 
   if (mlock(virt_addr, size)) {
