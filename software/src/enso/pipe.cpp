@@ -123,7 +123,9 @@ int RxPipe::Init(bool fallback) noexcept {
 }
 
 TxPipe::~TxPipe() {
+  // unmap it in the kernel space before unmapping it here
   if (internal_buf_) {
+    device_->UnmapTxPipeHugepage((uint64_t)buf_, kId);
     munmap(buf_, kMaxCapacity);
     std::string path = GetHugePageFilePath();
     unlink(path.c_str());
@@ -143,6 +145,17 @@ int TxPipe::Init() noexcept {
   struct NotificationBufPair* notif_buf = &(device_->notification_buf_pair_);
 
   buf_phys_addr_ = get_dev_addr_from_virt_addr(notif_buf, buf_);
+
+  // map the hugepage in the kernel space too
+  enso_map_tx_pipe_hugepage(notif_buf, (uint64_t)buf_, kId);
+
+  // let's try to read the memory and see if kernel was able to change it
+  /*int *buf_int_itr = (int *)buf_;
+  for (int i = 0; i < 4096; i++) {
+      std::cout << buf_int_itr[i] << " ";
+      if (i % 1024 == 0)
+          std::cout << std::endl;
+  }*/
 
   return 0;
 }
@@ -341,9 +354,10 @@ int Device::ApplyConfig(struct TxNotification* config_notification) {
   return send_config(&notification_buf_pair_, config_notification);
 }
 
-void Device::Send(uint32_t tx_enso_pipe_id, uint64_t phys_addr,
+void Device::Send(uint32_t tx_enso_pipe_id, uint64_t phys_addr, uint32_t off,
                   uint32_t nb_bytes) {
-  send_to_queue(&notification_buf_pair_, phys_addr, nb_bytes, tx_enso_pipe_id);
+  send_to_queue(&notification_buf_pair_, phys_addr, off, nb_bytes,
+                tx_enso_pipe_id);
 
   uint32_t nb_pending_requests =
       (tx_pr_tail_ - tx_pr_head_) & kPendingTxRequestsBufMask;
@@ -409,6 +423,10 @@ int Device::DisableRoundRobin() {
 
 void Device::FreeTxPipeID(uint32_t pipe_id) {
   enso_tx_pipe_free(&notification_buf_pair_, pipe_id);
+}
+
+void Device::UnmapTxPipeHugepage(uint64_t virt_addr, uint32_t pipe_id) {
+  enso_unmap_tx_pipe_hugepage(&notification_buf_pair_, virt_addr, pipe_id);
 }
 
 }  // namespace enso

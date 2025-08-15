@@ -338,7 +338,8 @@ class Device {
    * @param phys_addr The physical address of the buffer region to send.
    * @param nb_bytes The number of bytes to send.
    */
-  void Send(uint32_t tx_enso_pipe_id, uint64_t phys_addr, uint32_t nb_bytes);
+  void Send(uint32_t tx_enso_pipe_id, uint64_t phys_addr, uint32_t off,
+            uint32_t nb_bytes);
 
   /**
    * @brief Frees a Tx Pipe's ID. Called during destruction of a TxPipe object.
@@ -346,6 +347,7 @@ class Device {
    * @param tx_enso_pipe_id The ID of the TxPipe.
    */
   void FreeTxPipeID(uint32_t tx_enso_pipe_id);
+  void UnmapTxPipeHugepage(uint64_t virt_addr, uint32_t pipe_id);
 
   friend class RxPipe;
   friend class TxPipe;
@@ -857,12 +859,13 @@ class TxPipe {
    */
   inline void SendAndFree(uint32_t nb_bytes) {
     uint64_t phys_addr = buf_phys_addr_ + app_begin_;
+    uint32_t off = app_begin_;
     assert(nb_bytes <= kMaxCapacity);
     assert(nb_bytes / kQuantumSize * kQuantumSize == nb_bytes);
 
     app_begin_ = (app_begin_ + nb_bytes) & kBufMask;
 
-    device_->Send(kId, phys_addr, nb_bytes);
+    device_->Send(kId, phys_addr, off, nb_bytes);
   }
 
   /**

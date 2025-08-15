@@ -86,7 +86,11 @@ struct enso_advance_pipe_params {
 #define ENSO_IOCTL_PREFETCH_PIPE _IOW(ENSO_IOCTL_MAGIC, 18, unsigned int *)
 #define ENSO_IOCTL_ALLOC_TX_PIPE_ID _IOR(ENSO_IOCTL_MAGIC, 19, int *)
 #define ENSO_IOCTL_FREE_TX_PIPE_ID _IOW(ENSO_IOCTL_MAGIC, 20, unsigned int)
-#define ENSO_IOCTL_MAXNR 20
+#define ENSO_IOCTL_MAP_TX_PIPE_HUGEPAGE \
+  _IOW(ENSO_IOCTL_MAGIC, 21, struct map_tx_pipe_params *)
+#define ENSO_IOCTL_UNMAP_TX_PIPE_HUGEPAGE \
+  _IOW(ENSO_IOCTL_MAGIC, 22, struct map_tx_pipe_params *)
+#define ENSO_IOCTL_MAXNR 22
 
 long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
                          unsigned long arg);

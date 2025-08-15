@@ -103,10 +103,19 @@ static __init int enso_init(void) {
     goto failed_notif_buf_pair_alloc;
   }
 
+  dev_bk->tx_pipe_hp_mappings = kzalloc(
+      MAX_NB_FLOWS * sizeof(struct tx_pipe_hugepage_mapping*), GFP_KERNEL);
+  if (dev_bk->tx_pipe_hp_mappings == NULL) {
+    printk("couldn't tx_pipe_hp_mappings\n");
+    goto failed_tx_pipe_hp_mappings_alloc;
+  }
+
   global_bk.dev_bk = dev_bk;
 
   return 0;
 
+failed_tx_pipe_hp_mappings_alloc:
+  kfree(dev_bk->notif_buf_pairs);
 failed_notif_buf_pair_alloc:
   kfree(dev_bk->tx_pipe_id_status);
 failed_tx_pipe_id_status_alloc:
@@ -125,6 +134,7 @@ module_init(enso_init);
 static void enso_exit(void) {
   enso_chr_exit();
   global_bk.intel_enso = NULL;
+  kfree(global_bk.dev_bk->tx_pipe_hp_mappings);
   kfree(global_bk.dev_bk->notif_buf_pairs);
   kfree(global_bk.dev_bk->tx_pipe_id_status);
   kfree(global_bk.dev_bk->rx_pipe_id_status);

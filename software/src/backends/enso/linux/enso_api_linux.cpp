@@ -148,11 +148,12 @@ int EnsoDev::alloc_notif_buffer(int id) {
   return result;
 }
 
-int EnsoDev::send_tx_pipe(uint64_t phys_addr, uint32_t len,
+int EnsoDev::send_tx_pipe(uint64_t phys_addr, uint32_t off, uint32_t len,
                           uint32_t tx_pipe_id) {
   int result;
   struct enso_send_tx_pipe_params stpp;
   stpp.phys_addr = phys_addr;
+  stpp.off = off;
   stpp.len = len;
   stpp.id = tx_pipe_id;
   result = ioctl(m_dev_handle, ENSO_IOCTL_SEND_TX_PIPE, &stpp);
@@ -270,6 +271,24 @@ int EnsoDev::alloc_tx_pipe_id() {
 int EnsoDev::free_tx_pipe_id(int pipe_id) {
   int result;
   result = ioctl(m_dev_handle, ENSO_IOCTL_FREE_TX_PIPE_ID, pipe_id);
+  return result;
+}
+
+int EnsoDev::map_tx_pipe_hugepage(uint64_t virt_addr, int pipe_id) {
+  int result;
+  struct map_tx_pipe_params params;
+  params.user_virt_addr = virt_addr;
+  params.pipe_id = pipe_id;
+  result = ioctl(m_dev_handle, ENSO_IOCTL_MAP_TX_PIPE_HUGEPAGE, &params);
+  return result;
+}
+
+int EnsoDev::unmap_tx_pipe_hugepage(uint64_t virt_addr, int pipe_id) {
+  int result;
+  struct map_tx_pipe_params params;
+  params.user_virt_addr = virt_addr;
+  params.pipe_id = pipe_id;
+  result = ioctl(m_dev_handle, ENSO_IOCTL_UNMAP_TX_PIPE_HUGEPAGE, &params);
   return result;
 }
 

@@ -32,6 +32,10 @@
 
 #include "enso_ioctl.h"
 
+#include <linux/if_ether.h>
+#include <linux/ip.h>
+#include <linux/udp.h>
+
 #include "enso_setup.h"
 
 /******************************************************************************
@@ -77,6 +81,10 @@ static long alloc_tx_pipe_id(struct chr_dev_bookkeep *dev_bk,
                              int __user *user_addr);
 static long free_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
                             unsigned long uarg);
+static int map_tx_pipe_hugepage(struct chr_dev_bookkeep *chr_dev_bk,
+                                unsigned long user_addr);
+static int unmap_tx_pipe_hugepage(struct chr_dev_bookkeep *chr_dev_bk,
+                                  unsigned long user_addr);
 
 /* Helpers */
 static void free_rx_tx_buf(struct chr_dev_bookkeep *chr_dev_bk);
@@ -308,6 +316,22 @@ long enso_unlocked_ioctl(struct file *filp, unsigned int cmd,
         return -ERESTARTSYS;
       }
       retval = free_tx_pipe_id(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
+      break;
+    case ENSO_IOCTL_MAP_TX_PIPE_HUGEPAGE:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
+      retval = map_tx_pipe_hugepage(chr_dev_bk, uarg);
+      up(&dev_bk->sem);
+      break;
+    case ENSO_IOCTL_UNMAP_TX_PIPE_HUGEPAGE:
+      if (unlikely(down_interruptible(&dev_bk->sem))) {
+        printk("interrupted while attempting to obtain device semaphore.");
+        return -ERESTARTSYS;
+      }
+      retval = unmap_tx_pipe_hugepage(chr_dev_bk, uarg);
       up(&dev_bk->sem);
       break;
     default:
@@ -741,6 +765,13 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                          unsigned long uarg) {
   struct enso_send_tx_pipe_params stpp;
   struct notification_buf_pair *notif_buf_pair = chr_dev_bk->notif_buf_pair;
+
+  struct tx_pipe_hugepage_mapping *tx_pipe_hp_mapping;
+  struct dev_bookkeep *dev_bk;
+  uint8_t *pkt_itr;
+  struct udphdr *udp_hdr;
+  uint32_t idx = 0;
+
   if (copy_from_user(&stpp, (void __user *)uarg, sizeof(stpp))) {
     printk("couldn't copy arg from user.");
     return -EFAULT;
@@ -750,7 +781,21 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     printk("Notification buffer is invalid");
     return -EFAULT;
   }
+  dev_bk = chr_dev_bk->dev_bk;
+  tx_pipe_hp_mapping = dev_bk->tx_pipe_hp_mappings[stpp.id];
+  pkt_itr = (uint8_t *)tx_pipe_hp_mapping->kern_virt_addr + stpp.off;
 
+  for (idx = 0; idx < 2048; idx++) {
+    udp_hdr = (struct udphdr *)(pkt_itr + sizeof(struct ethhdr) +
+                                sizeof(struct iphdr));
+    if (ntohs(udp_hdr->dest) != 80) {
+      printk("Packet #%d: port number = %d\n", idx, ntohs(udp_hdr->dest));
+    }
+    pkt_itr = pkt_itr + 64;
+  }
+
+  // before sending iterate through this buffer and see if all packet match the
+  // filtering rules, for now just assume that you want to check the port number
   send_batch(notif_buf_pair, &stpp);
   return 0;
 }
@@ -1268,6 +1313,112 @@ static long free_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
 
   printk("Freeing TX pipe with id = %d\n", pipe_id);
   dev_bk->nb_tx_pipes--;
+  return 0;
+}
+
+static int map_tx_pipe_hugepage(struct chr_dev_bookkeep *chr_dev_bk,
+                                unsigned long uarg) {
+  struct map_tx_pipe_params params;
+  struct dev_bookkeep *dev_bk;
+  struct tx_pipe_hugepage_mapping *tx_pipe_hp_mapping;
+  int nb_pages;
+  int ret;
+  void *kern_virt_addr_ptr;
+  int *kern_ptr_int_itr;
+  int i;
+
+  if (copy_from_user(&params, (void __user *)uarg,
+                     sizeof(struct map_tx_pipe_params))) {
+    printk("couldn't copy arg from user.\n");
+    return -EFAULT;
+  }
+  dev_bk = chr_dev_bk->dev_bk;
+
+  tx_pipe_hp_mapping = (struct tx_pipe_hugepage_mapping *)kzalloc(
+      sizeof(struct tx_pipe_hugepage_mapping), GFP_KERNEL);
+  if (tx_pipe_hp_mapping == NULL) {
+    printk("tx_pipe_hp_mapping alloc failed\n");
+    return -ENOMEM;
+  }
+
+  nb_pages = HUGE_PAGE_SIZE >> PAGE_SHIFT;
+  printk("Need to map user addr %llx, pipe id = %u, nb pages = %d\n",
+         params.user_virt_addr, params.pipe_id, nb_pages);
+
+  tx_pipe_hp_mapping->pages =
+      kmalloc(nb_pages * sizeof(struct page *), GFP_KERNEL);
+  if (tx_pipe_hp_mapping->pages == NULL) {
+    printk("tx_pipe_hp_mapping->pages alloc failed\n");
+    return -ENOMEM;
+  }
+
+  ret = get_user_pages(params.user_virt_addr, nb_pages, FOLL_WRITE | FOLL_FORCE,
+                       tx_pipe_hp_mapping->pages, NULL);
+  if (ret != nb_pages) {
+    printk("Unable to map all pages\n");
+    // how to handle this failure?
+    return -EFAULT;
+  }
+
+  kern_virt_addr_ptr =
+      vmap(tx_pipe_hp_mapping->pages, nb_pages, VM_MAP, PAGE_KERNEL);
+  if (!kern_virt_addr_ptr) {
+    printk("Unable to get virtual address ptr\n");
+    // how to handle this failure?
+    return -EFAULT;
+  }
+
+  // everything successful, fill out the mapping struct and return
+  tx_pipe_hp_mapping->user_virt_addr = params.user_virt_addr;
+  tx_pipe_hp_mapping->kern_virt_addr = (uint64_t)kern_virt_addr_ptr;
+  tx_pipe_hp_mapping->pipe_id = params.pipe_id;
+  dev_bk->tx_pipe_hp_mappings[params.pipe_id] = tx_pipe_hp_mapping;
+
+  // let's try to iterate through the page and see if everything works
+  kern_ptr_int_itr = (int *)kern_virt_addr_ptr;
+  for (i = 0; i < 4096; i++) {
+    kern_ptr_int_itr[i] = i;
+  }
+
+  return 0;
+}
+
+static int unmap_tx_pipe_hugepage(struct chr_dev_bookkeep *chr_dev_bk,
+                                  unsigned long uarg) {
+  struct map_tx_pipe_params params;
+  struct tx_pipe_hugepage_mapping *tx_pipe_hp_mapping;
+  struct dev_bookkeep *dev_bk;
+  int nb_pages;
+  int i;
+  void *kern_virt_addr_ptr;
+  struct page **pages;
+
+  if (copy_from_user(&params, (void __user *)uarg,
+                     sizeof(struct map_tx_pipe_params))) {
+    printk("couldn't copy arg from user.\n");
+    return -EFAULT;
+  }
+  dev_bk = chr_dev_bk->dev_bk;
+
+  printk("Need to unmap user addr %llx, pipe id = %u\n", params.user_virt_addr,
+         params.pipe_id);
+
+  nb_pages = HUGE_PAGE_SIZE >> PAGE_SHIFT;
+  tx_pipe_hp_mapping = dev_bk->tx_pipe_hp_mappings[params.pipe_id];
+  pages = tx_pipe_hp_mapping->pages;
+  kern_virt_addr_ptr = (void *)tx_pipe_hp_mapping->kern_virt_addr;
+
+  // unmap the memory from the kernel
+  vunmap(kern_virt_addr_ptr);
+
+  // put all the pages back
+  for (i = 0; i < nb_pages; i++) put_page(pages[i]);
+
+  // free the memory we kmalloced earlier
+  kfree(pages);
+  kfree(tx_pipe_hp_mapping);
+  dev_bk->tx_pipe_hp_mappings[params.pipe_id] = NULL;
+
   return 0;
 }
 

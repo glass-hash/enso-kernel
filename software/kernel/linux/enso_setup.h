@@ -79,6 +79,7 @@ struct enso_intel_pcie {
 
 struct enso_send_tx_pipe_params {
   uint64_t phys_addr;
+  uint32_t off;
   uint32_t len;
   uint32_t id;
 } __attribute__((packed));
@@ -87,6 +88,18 @@ struct tx_send_ring_element {
   struct enso_send_tx_pipe_params ioctl_params;
   uint32_t notif_buf_id;
 } __attribute__((packed));
+
+struct map_tx_pipe_params {
+  uint64_t user_virt_addr;
+  uint32_t pipe_id;
+};
+
+struct tx_pipe_hugepage_mapping {
+  struct page **pages;
+  uint64_t user_virt_addr;
+  uint64_t kern_virt_addr;
+  uint32_t pipe_id;
+};
 
 /**
  * @struct enso_global_bookkeep
@@ -134,6 +147,7 @@ struct dev_bookkeep {
   uint8_t *rx_pipe_id_status;
   uint8_t *tx_pipe_id_status;
   struct notification_buf_pair **notif_buf_pairs;
+  struct tx_pipe_hugepage_mapping **tx_pipe_hp_mappings;
   uint32_t chr_open_cnt;
   uint32_t nb_fb_queues;
   uint32_t nb_tx_pipes;
