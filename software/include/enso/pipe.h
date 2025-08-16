@@ -803,140 +803,15 @@ class TxPipe {
   TxPipe(TxPipe&&) = delete;
   TxPipe& operator=(TxPipe&&) = delete;
 
-  /**
-   * @brief Allocates a buffer in the pipe.
-   *
-   * There can only be a single buffer allocated at a time for a given Pipe.
-   * Calling this function again when a buffer is already allocated will return
-   * the same address.
-   *
-   * The buffer capacity can be retrieved by calling `capacity()`. Note that the
-   * buffer capacity can increase without notice but will never decrease. The
-   * user can also explicitly request for the buffer to be extended by calling
-   * `ExtendBufToTarget()`.
-   *
-   * The buffer is valid until the user calls `SendAndFree()`. In which case,
-   * the buffer will be freed and a new one must be allocated by calling this
-   * function again.
-   *
-   * If `SendAndFree()` only partially sends the buffer, the previous buffer
-   * address will still not be valid. But allocating a new buffer will return a
-   * a buffers that starts with the remaining data.
-   *
-   * @warning The capacity will never be go beyond `TxPipe::kMaxCapacity`.
-   *          Therefore, specifying a `target_capacity` larger than
-   *          `TxPipe::kMaxCapacity` will cause this function to block forever.
-   *
-   * @param target_capacity Target capacity of the buffer. It will block until
-   *                        the buffer is at least this big. May set it to 0 to
-   *                        avoid blocking (the default).
-   *
-   * @return The allocated buffer address.
-   */
   uint8_t* AllocateBuf(uint32_t target_capacity = 0) {
-    ExtendBufToTarget(target_capacity);
+    (void)target_capacity;
     return buf_ + app_begin_;
   }
 
-  /**
-   * @brief Sends and deallocates a given number of bytes.
-   *
-   * After calling this function, the previous buffer address is no longer
-   * valid. Accessing it will lead to undefined behavior.
-   *
-   * @note The user must use `AllocateBuf()` to allocate a new buffer after
-   *       calling this function.
-   *
-   * The pipe's capacity will also be reduced by the number of bytes sent. If
-   * sending more bytes than the pipe's current capacity, the behavior is
-   * undefined. The user must also make sure not to modify the sent bytes after
-   * calling this function.
-   *
-   * @param nb_bytes The number of bytes to send. Must be a multiple of
-   *                 `kQuantumSize`.
-   */
   inline void SendAndFree(uint32_t nb_bytes) {
-    uint64_t phys_addr = buf_phys_addr_ + app_begin_;
-    assert(nb_bytes <= kMaxCapacity);
-    assert(nb_bytes / kQuantumSize * kQuantumSize == nb_bytes);
-
-    app_begin_ = (app_begin_ + nb_bytes) & kBufMask;
-
-    device_->Send(kId, phys_addr, nb_bytes);
+    uint8_t* addr = buf_ + app_begin_;
+    device_->Send(kId, (uint64_t)addr, nb_bytes);
   }
-
-  /**
-   * @brief Explicitly requests a best-effort buffer extension.
-   *
-   * Will check for completed transmissions to try to extend the capacity of the
-   * currently allocated buffer. After this, capacity will be at least as large
-   * as it was before. The user can continue to use the same buffer address as
-   * before.
-   *
-   * User may use `capacity()` to check the total number of available bytes
-   * after calling this function or simply use the return value.
-   *
-   * @note The capacity will never be extended beyond `TxPipe::kMaxCapacity`.
-   *
-   * @return The new buffer capacity after extending.
-   */
-  inline uint32_t TryExtendBuf() {
-    device_->ProcessCompletions();
-    return capacity();
-  }
-
-  /**
-   * @brief Explicitly requests a buffer extension with a target capacity.
-   *
-   * Different from `TryExtendBuf()`, this function will block until the
-   * capacity is at least as large as the target capacity. Other than that the
-   * behavior is the same.
-   *
-   * User may use `capacity()` to check the total number of available bytes
-   * after calling this function or simply use the return value.
-   *
-   * @warning The capacity will never be extended beyond `TxPipe::kMaxCapacity`.
-   *          Therefore, specifying a target capacity larger than
-   *          `TxPipe::kMaxCapacity` will block forever.
-   *
-   * @return The new buffer capacity after extending.
-   */
-  inline uint32_t ExtendBufToTarget(uint32_t target_capacity) {
-    uint32_t _capacity = capacity();
-    assert(target_capacity <= kMaxCapacity);
-    while (_capacity < target_capacity) {
-      _capacity = TryExtendBuf();
-    }
-    return _capacity;
-  }
-
-  /**
-   * @brief Returns the allocated buffer's current available capacity.
-   *
-   * The buffer capacity can increase without notice but will never decrease.
-   * The user can use this function to check the current capacity.
-   *
-   * @return The capacity of the allocated buffer in bytes.
-   */
-  inline uint32_t capacity() const {
-    return (app_end_ - app_begin_ - 1) & kBufMask;
-  }
-
-  /**
-   * @brief Returns the number of bytes that are currently being transmitted.
-   *
-   * @return Number of bytes pending transmission.
-   */
-  inline uint32_t pending_transmission() const {
-    return kMaxCapacity - ((app_end_ - app_begin_) & kBufMask);
-  }
-
-  /**
-   * @brief Returns the pipe's internal buffer.
-   *
-   * @return A pointer to the start of the pipe's internal buffer.
-   */
-  inline uint8_t* buf() const { return buf_; }
 
   /**
    * @brief Returns the pipe's ID.
@@ -1002,17 +877,6 @@ class TxPipe {
    */
   int Init() noexcept;
 
-  /**
-   * @brief Notifies the Pipe that a given number of bytes have been sent.
-   *
-   * Should be used by the `Device` object only.
-   *
-   * @param nb_bytes The number of bytes that have been sent.
-   */
-  inline void NotifyCompletion(uint32_t nb_bytes) {
-    app_end_ = (app_end_ + nb_bytes) & kBufMask;
-  }
-
   inline std::string GetHugePageFilePath() const {
     return device_->huge_page_prefix_ + std::string(kHugePagePathPrefix) +
            std::to_string(kId);
@@ -1027,42 +891,6 @@ class TxPipe {
   bool internal_buf_;       // If true, the buffer is allocated internally.
   uint32_t app_begin_ = 0;  // The next byte to be sent.
   uint32_t app_end_ = 0;    // The next byte to be allocated.
-  uint64_t buf_phys_addr_;
-
-  static constexpr uint32_t kBufMask = (kMaxCapacity + kQuantumSize) - 1;
-  static_assert((kBufMask & (kBufMask + 1)) == 0,
-                "(kBufMask + 1) must be a power of 2");
-
-  // Buffer layout:
-  //                                     | app_begin_          | app_end_
-  //                                     v                     v
-  //    +---+------------------------+---+---------------------+--------+
-  //    |   |  Waiting transmission  |   |  Available to user  |        |
-  //    +---+------------------------+---+---------------------+--------+
-  //        ^                        ^
-  //        | hw_begin_              | hw_end_
-  //
-  // The area available to the user is between `app_begin_` and `app_end_`.
-  // The area between `hw_begin_` and `hw_end_` is waiting to be transmitted.
-  //
-  // SendAndFree() will advance `app_begin_` by `nb_bytes_`, reducing the
-  // available space to the user. The size of the available region can be
-  // obtained by calling `capacity()`.
-  //
-  // To reclaim space, the user must call `Extend()`, which will check for
-  // completions and potentially advance the `hw_begin_`. We can then advance
-  // `app_end_` to match `hw_begin_`, increasing the available space to the
-  // user.
-  //
-  // All the buffer pointers (i.e., app_begin_, app_end_, hw_begin_, hw_end_)
-  // are in units of 64 bytes. The buffer itself is a circular buffer, so
-  // `app_end_` can be smaller than `app_begin_`.
-  //
-  // Currently app_begin_ == hw_end_ and app_end_ == hw_begin_. But this may
-  // change in the future. One reason it might be useful to change this is that
-  // currently `Device::Send()` blocks when the notification buffer is full. If
-  // we make sending non-blocking, it may be useful to let the hw_*_ and app_*_
-  // pointers diverge.
 };
 
 /**
@@ -1193,13 +1021,13 @@ class RxTxPipe {
    * receive more data.
    */
   inline void ProcessCompletions() {
-    uint32_t new_capacity = tx_pipe_->capacity();
+    // uint32_t new_capacity = tx_pipe_->capacity();
 
     // If the capacity has increased, we need to free up space in the RX pipe.
-    if (new_capacity > last_tx_pipe_capacity_) {
-      rx_pipe_->Free(new_capacity - last_tx_pipe_capacity_);
-      last_tx_pipe_capacity_ = new_capacity;
-    }
+    // if (new_capacity > last_tx_pipe_capacity_) {
+    //   rx_pipe_->Free(new_capacity - last_tx_pipe_capacity_);
+    //   last_tx_pipe_capacity_ = new_capacity;
+    // }
   }
 
   /**

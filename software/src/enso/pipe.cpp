@@ -140,9 +140,9 @@ int TxPipe::Init() noexcept {
     }
   }
 
-  struct NotificationBufPair* notif_buf = &(device_->notification_buf_pair_);
+  // struct NotificationBufPair* notif_buf = &(device_->notification_buf_pair_);
 
-  buf_phys_addr_ = get_dev_addr_from_virt_addr(notif_buf, buf_);
+  // buf_phys_addr_ = get_dev_addr_from_virt_addr(notif_buf, buf_);
 
   return 0;
 }
@@ -158,7 +158,7 @@ int RxTxPipe::Init(bool fallback) noexcept {
     return -1;
   }
 
-  last_tx_pipe_capacity_ = tx_pipe_->capacity();
+  // last_tx_pipe_capacity_ = tx_pipe_->capacity();
 
   return 0;
 }
@@ -344,39 +344,24 @@ int Device::ApplyConfig(struct TxNotification* config_notification) {
 void Device::Send(uint32_t tx_enso_pipe_id, uint64_t phys_addr,
                   uint32_t nb_bytes) {
   send_to_queue(&notification_buf_pair_, phys_addr, nb_bytes, tx_enso_pipe_id);
-
-  uint32_t nb_pending_requests =
-      (tx_pr_tail_ - tx_pr_head_) & kPendingTxRequestsBufMask;
-
-  // This will block until there is enough space to keep at least two requests.
-  // We need space for two requests because the request may be split into two
-  // if the bytes wrap around the end of the buffer.
-  while (unlikely(nb_pending_requests >= (kMaxPendingTxRequests - 2))) {
-    ProcessCompletions();
-    nb_pending_requests =
-        (tx_pr_tail_ - tx_pr_head_) & kPendingTxRequestsBufMask;
-  }
-
-  tx_pending_requests_[tx_pr_tail_].pipe_id = tx_enso_pipe_id;
-  tx_pending_requests_[tx_pr_tail_].nb_bytes = nb_bytes;
-  tx_pr_tail_ = (tx_pr_tail_ + 1) & kPendingTxRequestsBufMask;
 }
 
 void Device::ProcessCompletions() {
-  uint32_t tx_completions = get_unreported_completions(&notification_buf_pair_);
-  for (uint32_t i = 0; i < tx_completions; ++i) {
-    TxPendingRequest tx_req = tx_pending_requests_[tx_pr_head_];
-    tx_pr_head_ = (tx_pr_head_ + 1) & kPendingTxRequestsBufMask;
+  // uint32_t tx_completions =
+  // get_unreported_completions(&notification_buf_pair_); for (uint32_t i = 0; i
+  // < tx_completions; ++i) { TxPendingRequest tx_req =
+  // tx_pending_requests_[tx_pr_head_]; tx_pr_head_ = (tx_pr_head_ + 1) &
+  // kPendingTxRequestsBufMask;
 
-    TxPipe* pipe = tx_pipes_map_[tx_req.pipe_id];
-    pipe->NotifyCompletion(tx_req.nb_bytes);
-  }
+  // TxPipe* pipe = tx_pipes_map_[tx_req.pipe_id];
+  // pipe->NotifyCompletion(tx_req.nb_bytes);
+  // }
 
   // RxTx pipes need to be explicitly notified so that they can free space for
   // more incoming packets.
-  for (RxTxPipe* pipe : rx_tx_pipes_) {
-    pipe->ProcessCompletions();
-  }
+  // for (RxTxPipe* pipe : rx_tx_pipes_) {
+  //   pipe->ProcessCompletions();
+  // }
 }
 
 int Device::EnableTimeStamping(uint8_t offset) {

@@ -32,6 +32,10 @@
 
 #include "enso_ioctl.h"
 
+#include <linux/if_ether.h>
+#include <linux/ip.h>
+#include <linux/udp.h>
+
 #include "enso_setup.h"
 
 /******************************************************************************
@@ -91,7 +95,7 @@ static int32_t get_next_rx_pipe(struct notification_buf_pair *notif_buf_pair,
 void enso_io_write_32(uint32_t data, void *addr);
 uint32_t enso_io_read_32(void *addr);
 static int send_batch(struct notification_buf_pair *notif_buf_pair,
-                      struct enso_send_tx_pipe_params *stpp);
+                      uint64_t phys_addr, uint32_t len);
 
 /******************************************************************************
  * Device and I/O control function
@@ -741,6 +745,15 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
                          unsigned long uarg) {
   struct enso_send_tx_pipe_params stpp;
   struct notification_buf_pair *notif_buf_pair = chr_dev_bk->notif_buf_pair;
+  struct dev_bookkeep *dev_bk;
+  struct tx_pipe_buffer *tx_pipe_buffer;
+  uint8_t *user_addr;
+  uint8_t *batch_buf;
+  uint8_t *pkt_itr;
+  struct udphdr *udp_hdr;
+  uint32_t count = 0;
+  int idx;
+
   if (copy_from_user(&stpp, (void __user *)uarg, sizeof(stpp))) {
     printk("couldn't copy arg from user.");
     return -EFAULT;
@@ -751,7 +764,66 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     return -EFAULT;
   }
 
-  send_batch(notif_buf_pair, &stpp);
+  dev_bk = chr_dev_bk->dev_bk;
+  tx_pipe_buffer = dev_bk->tx_pipe_buffers[stpp.id];
+  while (tx_pipe_buffer->tx_pipe_batch_buffers[tx_pipe_buffer->cur_idx].valid ==
+         false) {
+    // we have sent all the usable buffers from this hugepage
+    // update the head of the ring before sending more
+    while (notif_buf_pair->nb_unreported_completions == 0) {
+      update_tx_head(notif_buf_pair);
+    }
+
+    // iterate through this and mark the buffers as valid
+    while (count < notif_buf_pair->nb_unreported_completions) {
+      if (tx_pipe_buffer->tx_pipe_batch_buffers[tx_pipe_buffer->last_free_idx]
+              .valid) {
+        printk("sanity check failed\n");
+      }
+
+      tx_pipe_buffer->tx_pipe_batch_buffers[tx_pipe_buffer->last_free_idx]
+          .valid = true;
+      tx_pipe_buffer->last_free_idx =
+          (tx_pipe_buffer->last_free_idx + 1) % NB_BATCHES_PER_HUGEPAGE;
+      count++;
+    }
+
+    notif_buf_pair->nb_unreported_completions = 0;
+  }
+
+  batch_buf =
+      (uint8_t *)tx_pipe_buffer->tx_pipe_batch_buffers[tx_pipe_buffer->cur_idx]
+          .buf_virt_addr;
+  user_addr = (uint8_t *)stpp.virt_addr;
+
+  // We either use copy_from_user to copy the batch
+  if (copy_from_user(batch_buf, user_addr, stpp.len)) {
+    printk("Failed to copy data from userspace\n");
+    return -EFAULT;
+  }
+
+  // OR use memcpy with stac and clac to set/clear the AC flag
+  // stac();
+  // memcpy(batch_buf, user_addr, stpp.len);
+  // clac();
+
+  pkt_itr = batch_buf;
+  for (idx = 0; idx < 2048; idx++) {
+    udp_hdr = (struct udphdr *)(pkt_itr + sizeof(struct ethhdr) +
+                                sizeof(struct iphdr));
+    if (ntohs(udp_hdr->dest) != 80) {
+      printk("Packet #%d: port number = %d\n", idx, ntohs(udp_hdr->dest));
+    }
+    pkt_itr = pkt_itr + 64;
+  }
+
+  tx_pipe_buffer->tx_pipe_batch_buffers[tx_pipe_buffer->cur_idx].valid = false;
+  send_batch(notif_buf_pair,
+             tx_pipe_buffer->tx_pipe_batch_buffers[tx_pipe_buffer->cur_idx]
+                 .buf_phys_addr,
+             stpp.len);
+  tx_pipe_buffer->cur_idx =
+      (tx_pipe_buffer->cur_idx + 1) % NB_BATCHES_PER_HUGEPAGE;
   return 0;
 }
 
@@ -1199,6 +1271,7 @@ static long alloc_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
                              int __user *user_addr) {
   int i = 0;
   int32_t pipe_id = -1;
+  uint32_t off = 0;
   struct dev_bookkeep *dev_bk;
 
   dev_bk = chr_dev_bk->dev_bk;
@@ -1227,6 +1300,41 @@ static long alloc_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
     return -ENOMEM;
   }
   printk("Allocated TX pipe with id = %d\n", pipe_id);
+
+  dev_bk->tx_pipe_buffers[pipe_id] = (struct tx_pipe_buffer *)kzalloc(
+      sizeof(struct tx_pipe_buffer), GFP_KERNEL);
+  if (dev_bk->tx_pipe_buffers[pipe_id] == NULL) {
+    printk("couldn't allocate tx pipe buffer\n");
+    return -ENOMEM;
+  }
+
+  dev_bk->tx_pipe_buffers[pipe_id]->hugepage_buf =
+      (uint8_t *)kzalloc(HUGE_PAGE_SIZE, GFP_KERNEL);
+  if (dev_bk->tx_pipe_buffers[pipe_id]->hugepage_buf == NULL) {
+    kfree(dev_bk->tx_pipe_buffers[pipe_id]);
+    printk("couldn't allocate hugepage buffer\n");
+    return -ENOMEM;
+  }
+
+  for (i = 0; i < NB_BATCHES_PER_HUGEPAGE; i++) {
+    // Chop up the hugepage buffer into MAX_TRANSFER_LEN sized buffers
+    off = i * MAX_TRANSFER_LEN;
+    dev_bk->tx_pipe_buffers[pipe_id]->tx_pipe_batch_buffers[i].buf_virt_addr =
+        (uint64_t)(dev_bk->tx_pipe_buffers[pipe_id]->hugepage_buf + off);
+    dev_bk->tx_pipe_buffers[pipe_id]->tx_pipe_batch_buffers[i].buf_phys_addr =
+        virt_to_phys(dev_bk->tx_pipe_buffers[pipe_id]->hugepage_buf + off);
+    dev_bk->tx_pipe_buffers[pipe_id]->tx_pipe_batch_buffers[i].valid = true;
+    printk("buf %d virt at %llx, phys at %llx\n", i,
+           dev_bk->tx_pipe_buffers[pipe_id]
+               ->tx_pipe_batch_buffers[i]
+               .buf_virt_addr,
+           dev_bk->tx_pipe_buffers[pipe_id]
+               ->tx_pipe_batch_buffers[i]
+               .buf_phys_addr);
+  }
+
+  dev_bk->tx_pipe_buffers[pipe_id]->cur_idx = 0;
+  dev_bk->tx_pipe_buffers[pipe_id]->last_free_idx = 0;
 
   if (copy_to_user(user_addr, &pipe_id, sizeof(pipe_id))) {
     printk("couldn't copy pipe_id information to user.");
@@ -1267,6 +1375,9 @@ static long free_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
   chr_dev_bk->tx_pipe_id_status[i] &= ~(1 << j);
 
   printk("Freeing TX pipe with id = %d\n", pipe_id);
+  if (dev_bk->tx_pipe_buffers[pipe_id]->hugepage_buf)
+    kfree(dev_bk->tx_pipe_buffers[pipe_id]->hugepage_buf);
+  if (dev_bk->tx_pipe_buffers[pipe_id]) kfree(dev_bk->tx_pipe_buffers[pipe_id]);
   dev_bk->nb_tx_pipes--;
   return 0;
 }
@@ -1309,8 +1420,6 @@ void update_tx_head(struct notification_buf_pair *notif_buf_pair) {
   uint32_t tail = notif_buf_pair->tx_tail;
   struct tx_notification *tx_notif;
   uint16_t i;
-  uint8_t wrap_tracker_mask;
-  uint8_t no_wrap;
 
   if (head == tail) {
     return;
@@ -1328,17 +1437,7 @@ void update_tx_head(struct notification_buf_pair *notif_buf_pair) {
       break;
     }
 
-    // Requests that wrap around need two notifications but should only signal
-    // a single completion notification. Therefore, we only increment
-    // `nb_unreported_completions` in the second notification.
-    // TODO(sadok): If we implement the logic to have two notifications in the
-    // same cache line, we can get rid of `wrap_tracker` and instead check
-    // for two notifications.
-    wrap_tracker_mask = 1 << (head & 0x7);
-    no_wrap = !(notif_buf_pair->wrap_tracker[head / 8] & wrap_tracker_mask);
-    notif_buf_pair->nb_unreported_completions += no_wrap;
-    notif_buf_pair->wrap_tracker[head / 8] &= ~wrap_tracker_mask;
-
+    notif_buf_pair->nb_unreported_completions++;
     head = (head + 1) % NOTIFICATION_BUF_SIZE;
   }
 
@@ -1571,67 +1670,32 @@ uint32_t enso_io_read_32(void *addr) {
  * added.
  * @param stpp batch related parameters (phys_addr, len, etc).
  */
-int send_batch(struct notification_buf_pair *notif_buf_pair,
-               struct enso_send_tx_pipe_params *stpp) {
+int send_batch(struct notification_buf_pair *notif_buf_pair, uint64_t phys_addr,
+               uint32_t len) {
   struct tx_notification *tx_buf;
   struct tx_notification *new_tx_notification;
   uint32_t tx_tail;
-  uint32_t missing_bytes;
-  uint32_t missing_bytes_in_page;
-  uint8_t wrap_tracker_mask;
-
-  uint64_t transf_addr;
-  uint64_t hugepage_mask;
-  uint64_t hugepage_base_addr;
-  uint64_t hugepage_boundary;
-  uint64_t huge_page_offset;
   uint32_t free_slots;
-  uint32_t req_length;
-  uint32_t buf_page_size = HUGE_PAGE_SIZE;
 
   tx_buf = notif_buf_pair->tx_buf;
   tx_tail = notif_buf_pair->tx_tail;
-  missing_bytes = stpp->len;
 
-  transf_addr = stpp->phys_addr;
-  hugepage_mask = ~((uint64_t)buf_page_size - 1);
-  hugepage_base_addr = transf_addr & hugepage_mask;
-  hugepage_boundary = hugepage_base_addr + buf_page_size;
+  free_slots = (notif_buf_pair->tx_head - tx_tail - 1) % NOTIFICATION_BUF_SIZE;
 
-  while (missing_bytes > 0) {
+  // Block until we can send.
+  while (unlikely(free_slots == 0)) {
+    ++notif_buf_pair->tx_full_cnt;
+    update_tx_head(notif_buf_pair);
     free_slots =
         (notif_buf_pair->tx_head - tx_tail - 1) % NOTIFICATION_BUF_SIZE;
-
-    // Block until we can send.
-    while (unlikely(free_slots == 0)) {
-      ++notif_buf_pair->tx_full_cnt;
-      update_tx_head(notif_buf_pair);
-      free_slots =
-          (notif_buf_pair->tx_head - tx_tail - 1) % NOTIFICATION_BUF_SIZE;
-    }
-
-    new_tx_notification = tx_buf + tx_tail;
-    req_length =
-        (missing_bytes < MAX_TRANSFER_LEN) ? missing_bytes : MAX_TRANSFER_LEN;
-    missing_bytes_in_page = hugepage_boundary - transf_addr;
-    req_length = (req_length < missing_bytes_in_page) ? req_length
-                                                      : missing_bytes_in_page;
-
-    // If the transmission needs to be split among multiple requests, we
-    // need to set a bit in the wrap tracker.
-    wrap_tracker_mask = (missing_bytes > req_length) << (tx_tail & 0x7);
-    notif_buf_pair->wrap_tracker[tx_tail / 8] |= wrap_tracker_mask;
-
-    new_tx_notification->length = req_length;
-    new_tx_notification->signal = 1;
-    new_tx_notification->phys_addr = transf_addr;
-
-    huge_page_offset = (transf_addr + req_length) % (HUGE_PAGE_SIZE);
-    transf_addr = hugepage_base_addr + huge_page_offset;
-
-    tx_tail = (tx_tail + 1) % NOTIFICATION_BUF_SIZE;
-    missing_bytes -= req_length;
   }
+
+  new_tx_notification = tx_buf + tx_tail;
+  new_tx_notification->length = len;
+  new_tx_notification->signal = 1;
+  new_tx_notification->phys_addr = phys_addr;
+
+  tx_tail = (tx_tail + 1) % NOTIFICATION_BUF_SIZE;
 
   notif_buf_pair->tx_tail = tx_tail;
   enso_io_write_32(tx_tail, notif_buf_pair->tx_tail_ptr);

@@ -56,6 +56,7 @@
 #define ENSO_PIPE_SIZE 32768
 #define MAX_TRANSFER_LEN 131072
 #define HUGE_PAGE_SIZE (0x1ULL << 21)
+#define NB_BATCHES_PER_HUGEPAGE 16
 #define MEM_PER_QUEUE (0x1ULL << 12)
 #define BATCH_SIZE 64
 
@@ -78,7 +79,7 @@ struct enso_intel_pcie {
 };
 
 struct enso_send_tx_pipe_params {
-  uint64_t phys_addr;
+  uint64_t virt_addr;
   uint32_t len;
   uint32_t id;
 } __attribute__((packed));
@@ -86,6 +87,19 @@ struct enso_send_tx_pipe_params {
 struct tx_send_ring_element {
   struct enso_send_tx_pipe_params ioctl_params;
   uint32_t notif_buf_id;
+} __attribute__((packed));
+
+struct tx_pipe_batch_buffer {
+  uint64_t buf_virt_addr;
+  uint64_t buf_phys_addr;
+  bool valid;
+} __attribute__((packed));
+
+struct tx_pipe_buffer {
+  uint8_t *hugepage_buf;
+  struct tx_pipe_batch_buffer tx_pipe_batch_buffers[NB_BATCHES_PER_HUGEPAGE];
+  uint16_t cur_idx;
+  uint16_t last_free_idx;
 } __attribute__((packed));
 
 /**
@@ -134,6 +148,7 @@ struct dev_bookkeep {
   uint8_t *rx_pipe_id_status;
   uint8_t *tx_pipe_id_status;
   struct notification_buf_pair **notif_buf_pairs;
+  struct tx_pipe_buffer **tx_pipe_buffers;
   uint32_t chr_open_cnt;
   uint32_t nb_fb_queues;
   uint32_t nb_tx_pipes;
