@@ -31,6 +31,7 @@
  */
 #include "schedPerf.h"
 
+#include <sys/sysinfo.h>
 #include <unistd.h>
 
 #include <csignal>
@@ -53,8 +54,10 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
   config.mode = Mode::Unknown;
   uint16_t timeoutVal = 0;
   uint32_t batchSize = 0;
+  uint16_t rate = 0;
+  uint16_t pktSize = 0;
 
-  while ((opt = getopt(argc, argv, "s:c:t:b:")) != -1) {
+  while ((opt = getopt(argc, argv, "s:c:t:b:r:l:")) != -1) {
     switch (opt) {
       case 's':
         if (config.mode != Mode::Unknown) {
@@ -78,8 +81,8 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
           return false;
         }
         config.mode = Mode::Client;
-        config.clientConfig.numFlowsPerCore = atoi(optarg);
-        if (config.clientConfig.numFlowsPerCore <= 0) {
+        config.clientConfig.numFlows = atoi(optarg);
+        if (config.clientConfig.numFlows <= 0) {
           std::cerr << "Error: Number of connections must be positive"
                     << std::endl;
           return false;
@@ -102,33 +105,48 @@ bool ProgramConfig::parseArgs(int argc, char* argv[], ProgramConfig& config) {
         }
         break;
 
+      case 'r':
+        rate = atoi(optarg);
+        if ((rate == 0) || (rate > 100)) {
+          std::cerr << "Invalid rate value" << std::endl;
+          return false;
+        }
+        break;
+
+      case 'l':
+        pktSize = atoi(optarg);
+        if (pktSize == 0) {
+          std::cerr << "Invalid packet size" << std::endl;
+          return false;
+        }
+        break;
+
       case '?':
         std::cerr << "Error: Invalid option" << std::endl;
         return false;
     }
   }
 
-  std::cout << "Opt index = " << optind << std::endl;
   // Process remaining arguments based on mode
   if (config.mode == Mode::Client) {
-    // Need at least 2 more arguments (cores and pcap path)
+    // Need at least 2 more arguments (core ID and number of flows)
+    if (optind >= argc) {
+      std::cerr << "Error: Client mode requires core ID" << std::endl;
+      return false;
+    }
+    config.clientConfig.coreID = atoi(argv[optind]);
     config.clientConfig.timeout = timeoutVal;
-    if (optind + 1 >= argc) {
-      std::cerr << "Error: Client mode requires <num-cores> and <pcap-path>"
-                << std::endl;
+    int onlineCores = get_nprocs();
+    if (!(config.clientConfig.coreID < onlineCores)) {
+      std::cerr << "Error: Invalid core ID, valid range [0," << onlineCores
+                << ")" << std::endl;
       return false;
     }
 
-    config.clientConfig.numCores = atoi(argv[optind]);
-    if (config.clientConfig.numCores <= 0) {
-      std::cerr << "Error: Number of cores must be positive" << std::endl;
-      return false;
-    }
-
-    config.clientConfig.pcapPath = argv[optind + 1];
     config.clientConfig.batchSize = (batchSize == 0) ? 131072 : batchSize;
+    config.clientConfig.rate = (rate == 0) ? 100 : rate;
+    config.clientConfig.pktSize = (pktSize == 0) ? 64 : pktSize;
     optind += 2;
-
   } else if (config.mode == Mode::Server) {
     // Server mode shouldn't have any additional arguments
     if (batchSize != 0) {
@@ -158,9 +176,8 @@ int main(int argc, char* argv[]) {
     std::cerr << "Usage:\n"
               << "  Server mode: " << argv[0] << " -s <num-flows>\n"
               << "  Client mode: " << argv[0]
-              << " -c <num-flows-per-core> <num-cores> <pcap-path> -t "
-                 "<timeout> -b <batch-size>"
-              << std::endl;
+              << " -c <num-flows> <core-id> -t <timeout> -b <batch-size>"
+              << " -l <pkt-size> -r <sending-rate>" << std::endl;
     return 1;
   }
   // init signal handler

@@ -30,7 +30,12 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <arpa/inet.h>
 #include <enso/helpers.h>
+#include <net/ethernet.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
 #include <unistd.h>
 
 #include <chrono>
@@ -44,129 +49,167 @@
 
 #define INTEL_FPGA_PCIE_BDF "65:00.0"
 #define MIN_PACKET_SIZE 64
+#define NSEC_PER_SEC 1000000000ULL
+
+constexpr char kDstMac[] = "aa:aa:aa:aa:aa:aa";
+constexpr char kSrcMac[] = "bb:bb:bb:bb:bb:bb";
 
 Client::Client(const ClientConfig& config) { startClient(config); }
 
-void Client::pcapPktHandler(u_char* user, const struct pcap_pkthdr* pktHeader,
-                            const u_char* pktBytes) {
-  (void)pktHeader;
-  struct PcapHandler* context = (struct PcapHandler*)user;
+void Client::initializeTxPipes(std::vector<struct EnsoTxPipe>& txPipes,
+                               uint16_t numFlows, uint16_t pktSize,
+                               uint32_t batchSize, std::unique_ptr<Device>& dev,
+                               uint16_t coreID) {
+  // We want to have one flow per tx pipe. During testing, the program will
+  // be used with the same number of flows but different core IDs.
+  uint16_t coreFlowIndexStart = coreID * numFlows;
+  for (uint16_t flowInd = 0; flowInd < numFlows; flowInd++) {
+    uint8_t* pktBuf;
+    if (posix_memalign((void**)&pktBuf, 64, pktSize * sizeof(uint8_t)) != 0) {
+      std::cerr << "Posix memalign failed" << std::endl;
+      exit(2);
+    }
+    struct ether_addr dstMac = *ether_aton(kDstMac);
+    struct ether_addr srcMac = *ether_aton(kSrcMac);
+    uint16_t pktSizeNoCrc = pktSize - 4;
+    struct ether_header* ethHeader = (struct ether_header*)pktBuf;
+    struct iphdr* ipHeader = (struct iphdr*)(ethHeader + 1);
+    struct udphdr* udpHeader = (struct udphdr*)(ipHeader + 1);
+    uint32_t baseIP = 0xC0A80000;  // 192.168.0.0
+    // Ethernet header
+    memcpy(&ethHeader->ether_shost, &srcMac, ETHER_ADDR_LEN);
+    memcpy(&ethHeader->ether_dhost, &dstMac, ETHER_ADDR_LEN);
+    ethHeader->ether_type = htons(ETHERTYPE_IP);
+    // IP header
+    ipHeader->version = 4;
+    ipHeader->ihl = 5;  // 20 bytes (5 * 4)
+    ipHeader->tos = 0;
+    ipHeader->tot_len = htons(pktSizeNoCrc - sizeof(struct ether_header));
+    ipHeader->id = 0;
+    ipHeader->frag_off = 0;
+    ipHeader->ttl = 64;
+    ipHeader->protocol = IPPROTO_UDP;
+    ipHeader->saddr = htonl(baseIP);  // srcIP always remains the same;
+    // why create new flows based on dst ip though, why not dst port?
+    ipHeader->daddr = htonl(baseIP + coreFlowIndexStart + flowInd);
+    ipHeader->check = 0;
+    // UDP header
+    udpHeader->source = htons(8080);
+    udpHeader->dest = htons(80);
+    udpHeader->len = htons(
+        pktSizeNoCrc - (sizeof(struct ether_header) + sizeof(struct iphdr)));
+    udpHeader->check = 0;
+    // Fill payload
+    uint8_t* payload = (uint8_t*)(((char*)udpHeader) + sizeof(struct udphdr));
+    uint16_t payloadSize = pktSizeNoCrc - sizeof(struct ether_header) -
+                           sizeof(struct iphdr) - sizeof(struct udphdr);
+    for (uint16_t i = 0; i < payloadSize; i++) {
+      payload[i] = 0xff;
+    }
+    uint32_t numFlits = (pktSizeNoCrc - 1) / MIN_PACKET_SIZE + 1;
+    uint32_t pktAlignedSize = numFlits * MIN_PACKET_SIZE;
+    uint32_t numPktsInBatch = batchSize / pktAlignedSize;
 
-  const struct ether_header* l2Header = (struct ether_header*)pktBytes;
-  if (l2Header->ether_type != htons(ETHERTYPE_IP)) {
-    std::cerr << "Non-IPv4 packets are not supported" << std::endl;
-    exit(1);
+    TxPipe* pipe = dev->AllocateTxPipe();
+    if (!pipe) {
+      std::cerr << "Problem creating TX pipe" << std::endl;
+      cleanupAndExit(txPipes, dev);
+    }
+    struct EnsoTxPipe etp(pipe, pktBuf);
+    etp.bufSize = pktAlignedSize;
+    etp.numAlignedBytes = pktAlignedSize * numPktsInBatch;
+    etp.numRawBytes = pktSizeNoCrc * numPktsInBatch;
+    etp.numPkts = numPktsInBatch;
+    txPipes.push_back(etp);
   }
+}
 
-  uint16_t devId = context->txPipes.size() / context->numFlowsPerCore;
-  uint32_t len = enso::get_pkt_len(pktBytes);
-  // Set the timestamp to zero to calculate inter-arrival packet rates on the
-  // receiver
-  enso::set_pkt_rtt(pktBytes, 0);
-  uint32_t numFlits = (len - 1) / MIN_PACKET_SIZE + 1;
-  TxPipe* pipe = context->devs[devId]->AllocateTxPipe();
-  if (!pipe) {
-    std::cerr << "Problem creating TX pipe" << std::endl;
-    exit(2);
+void Client::cleanupAndExit(std::vector<struct EnsoTxPipe>& txPipes,
+                            std::unique_ptr<Device>& dev) {
+  for (auto pipe : txPipes) {
+    if (pipe.buf) {
+      free(pipe.buf);
+    }
   }
-  uint8_t* buf;
-  // Instead of allocating batch size worth of data and copying it on to the
-  // TxPipe we keep the source buffer small and copy it over and over again for
-  // better cache performance
-  uint32_t pktAlignedSize = numFlits * MIN_PACKET_SIZE;
-  if (posix_memalign((void**)&buf, 64, pktAlignedSize * sizeof(uint8_t)) != 0) {
-    std::cerr << "Posix memalign failed" << std::endl;
-    exit(2);
-  }
-  uint32_t numPktsInBatch = context->batchSize / pktAlignedSize;
-  struct EnsoTxPipe etp(pipe, buf);
-  memcpy(buf, pktBytes, len);
-  etp.bufSize = pktAlignedSize;
-  etp.numAlignedBytes = pktAlignedSize * numPktsInBatch;
-  etp.numRawBytes = len * numPktsInBatch;
-  etp.numPkts = numPktsInBatch;
-  context->txPipes.push_back(etp);
+  dev.reset();
+  exit(2);
+}
+
+static inline uint64_t get_ns(void) {
+  struct timespec ts;
+  // Get current time using CLOCK_MONOTONIC
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  // Convert to nanoseconds
+  uint64_t ns = (uint64_t)ts.tv_sec * NSEC_PER_SEC + (uint64_t)ts.tv_nsec;
+  return ns;
 }
 
 void Client::runTx(std::vector<enso::tx_stats_t>& stats,
                    std::vector<struct EnsoTxPipe>& pipes, uint16_t coreId,
-                   uint16_t flowsPerCore) {
+                   uint16_t flowsPerCore, uint16_t rate) {
   std::cout << "Running on core " << coreId << " with pid = " << getpid()
             << std::endl;
-  uint16_t startInd = coreId * flowsPerCore;
-  uint16_t endInd = startInd + flowsPerCore;
+  uint16_t startInd = 0;
+  uint16_t endInd = flowsPerCore;
+  uint64_t rate_bytes = ((uint64_t)rate * 1000000000) / 8;
+  int64_t cur_rate_bytes = rate_bytes;
+  uint64_t time_last = get_ns();
+  // Assuming that all pipes send the same batch size
+  uint64_t batch_size_on_wire = pipes[0].numRawBytes + pipes[0].numPkts * 24;
   while (ProgramConfig::keepRunning) {
     for (uint16_t i = startInd; i < endInd; i++) {
-      // send the packets
-      uint8_t* pipeBuf = pipes[i].txPipe->AllocateBuf(pipes[i].numAlignedBytes);
-      enso::memcpy_wrap_around(pipeBuf, pipes[i].buf, pipes[i].numAlignedBytes,
-                               pipes[i].bufSize);
-      pipes[i].txPipe->SendAndFree(pipes[i].numAlignedBytes);
-      // update the stats
-      stats[pipes[i].txPipe->id()].nb_bytes += pipes[i].numRawBytes;
-      stats[pipes[i].txPipe->id()].nb_pkts += pipes[i].numPkts;
+      uint64_t time_now = get_ns();
+      if (time_now > (time_last + NSEC_PER_SEC)) {
+        cur_rate_bytes = rate_bytes;
+        time_last = time_now;
+      }
+      cur_rate_bytes -= batch_size_on_wire;
+      if (cur_rate_bytes > 0) {
+        // send the packets
+        uint8_t* pipeBuf =
+            pipes[i].txPipe->AllocateBuf(pipes[i].numAlignedBytes);
+        enso::memcpy_wrap_around(pipeBuf, pipes[i].buf,
+                                 pipes[i].numAlignedBytes, pipes[i].bufSize);
+        pipes[i].txPipe->SendAndFree(pipes[i].numAlignedBytes);
+        // update the stats
+        stats[i].nb_bytes += pipes[i].numRawBytes;
+        stats[i].nb_pkts += pipes[i].numPkts;
+      }
     }
   }
 }
 
 int Client::startClient(const ClientConfig& config) {
   std::cout << "Running in client mode with:\n"
-            << "  Connections: " << config.numFlowsPerCore * config.numCores
-            << "\n"
-            << "  Cores: " << config.numCores << "\n"
-            << "  PCAP path: " << config.pcapPath << "\n"
-            << "  Timeout: " << config.timeout << "\n";
-  std::vector<std::unique_ptr<Device>> devs(config.numCores);
-  for (uint16_t i = 0; i < config.numCores; i++) {
-    devs[i] = Device::Create(INTEL_FPGA_PCIE_BDF);
-    if (!devs[i]) {
-      std::cerr << "Problem creating device" << std::endl;
-      exit(2);
-    }
+            << "  Connections: " << config.numFlows << "\n"
+            << "  Core ID: " << config.coreID << "\n"
+            << "  Timeout: " << config.timeout << "\n"
+            << "  Rate: " << config.rate << "\n"
+            << "  Packet size: " << config.pktSize << "\n";
+
+  std::unique_ptr<Device> dev = Device::Create(INTEL_FPGA_PCIE_BDF);
+  if (!dev) {
+    std::cerr << "Problem creating device" << std::endl;
+    exit(2);
   }
 
-  char errbuf[PCAP_ERRBUF_SIZE];
-  pcap_t* pcap = pcap_open_offline(config.pcapPath.c_str(), errbuf);
-  if (pcap == NULL) {
-    std::cerr << "Error loading pcap file (" << errbuf << ")" << std::endl;
-    return 2;
-  }
-
-  struct PcapHandler context(devs, pcap, this, config.numFlowsPerCore,
-                             config.batchSize);
-  std::vector<struct EnsoTxPipe>& txPipes = context.txPipes;
-
-  if (pcap_loop(context.pcap, 0, Client::pcapPktHandler, (u_char*)&context) <
-      0) {
-    std::cerr << "Error while reading pcap (" << pcap_geterr(context.pcap)
-              << ")" << std::endl;
-    return -2;
-  }
-
-  if (txPipes.size() != (config.numCores * config.numFlowsPerCore)) {
-    std::cerr << "PCAP file does not have the same number of flows"
-              << std::endl;
-    std::cerr << config.numFlowsPerCore * config.numCores << " expected. "
-              << txPipes.size() << " found." << std::endl;
-    return -2;
-  }
-
+  std::vector<struct EnsoTxPipe> txPipes;
+  initializeTxPipes(txPipes, config.numFlows, config.pktSize, config.batchSize,
+                    dev, config.coreID);
   std::vector<std::thread> threads;
-  uint16_t totalFlows = config.numCores * config.numFlowsPerCore;
-  std::vector<enso::tx_stats_t> flowStats(totalFlows);
+  std::vector<enso::tx_stats_t> flowStats(config.numFlows);
 
-  for (uint16_t coreId = 0; coreId < config.numCores; coreId++) {
-    threads.emplace_back(&Client::runTx, this, std::ref(flowStats),
-                         std::ref(txPipes), coreId, config.numFlowsPerCore);
-    if (enso::set_core_id(threads.back(), coreId)) {
-      std::cerr << "Error setting CPU affinity" << std::endl;
-      return 6;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  threads.emplace_back(&Client::runTx, this, std::ref(flowStats),
+                       std::ref(txPipes), config.coreID, config.numFlows,
+                       config.rate);
+  if (enso::set_core_id(threads.back(), config.coreID)) {
+    std::cerr << "Error setting CPU affinity" << std::endl;
+    return 6;
   }
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-  show_tx_flow_stats(flowStats, config.numCores * config.numFlowsPerCore,
-                     &ProgramConfig::keepRunning, config.timeout);
+  show_tx_flow_stats(flowStats, config.numFlows, &ProgramConfig::keepRunning,
+                     config.timeout);
 
   for (auto& thread : threads) {
     thread.join();
@@ -175,11 +218,13 @@ int Client::startClient(const ClientConfig& config) {
   // calculate final stats and put in a file
   uint64_t totalBytes = 0;
   uint64_t totalPkts = 0;
-  for (uint32_t i = 0; i < totalFlows; i++) {
+  for (uint32_t i = 0; i < config.numFlows; i++) {
     totalBytes += flowStats[i].nb_bytes;
     totalPkts += flowStats[i].nb_pkts;
   }
-  std::ofstream statsFile("schedTxStats.csv");
+  std::string fileName =
+      "schedTxStats_" + std::to_string(config.coreID) + ".csv";
+  std::ofstream statsFile(fileName);
   statsFile << totalBytes << "," << totalPkts << std::endl;
   statsFile.close();
 
