@@ -747,12 +747,14 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   struct notification_buf_pair *notif_buf_pair = chr_dev_bk->notif_buf_pair;
   struct dev_bookkeep *dev_bk;
   struct tx_pipe_buffer *tx_pipe_buffer;
-  uint8_t *user_addr;
+  uint8_t *user_control_addr;
+  uint8_t *user_data_addr;
   uint8_t *batch_buf;
-  uint8_t *pkt_itr;
-  struct udphdr *udp_hdr;
   uint32_t count = 0;
-  int idx;
+  uint32_t data_off = 0;
+  uint32_t copy_off = 0;
+  uint32_t per_packet_data_size = 18;
+  uint32_t copied_len = 0;
 
   if (copy_from_user(&stpp, (void __user *)uarg, sizeof(stpp))) {
     printk("couldn't copy arg from user.");
@@ -791,37 +793,36 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     notif_buf_pair->nb_unreported_completions = 0;
   }
 
+  // printk("Control at %llx, len = %u, data at %llx, len = %u\n",
+  // stpp.control_virt_addr,
+  //                                                               stpp.control_len,
+  //                                                               stpp.data_virt_addr,
+  //                                                               stpp.data_len);
   batch_buf =
       (uint8_t *)tx_pipe_buffer->tx_pipe_batch_buffers[tx_pipe_buffer->cur_idx]
           .buf_virt_addr;
-  user_addr = (uint8_t *)stpp.virt_addr;
+  user_control_addr = (uint8_t *)stpp.control_virt_addr;
+  user_data_addr = (uint8_t *)stpp.data_virt_addr;
 
-  // We either use copy_from_user to copy the batch
-  if (copy_from_user(batch_buf, user_addr, stpp.len)) {
-    printk("Failed to copy data from userspace\n");
-    return -EFAULT;
+  stac();
+  while (copied_len < stpp.data_len) {
+    memcpy(batch_buf + copy_off, user_control_addr, stpp.control_len);
+    copy_off += stpp.control_len;
+    memcpy(batch_buf + copy_off, user_data_addr + data_off,
+           per_packet_data_size);
+    copy_off += per_packet_data_size;
+    data_off += per_packet_data_size;
+    // we need to do 64 byte aligned copy
+    copy_off += 4;
+    copied_len += per_packet_data_size;
   }
-
-  // OR use memcpy with stac and clac to set/clear the AC flag
-  // stac();
-  // memcpy(batch_buf, user_addr, stpp.len);
-  // clac();
-
-  pkt_itr = batch_buf;
-  for (idx = 0; idx < 2048; idx++) {
-    udp_hdr = (struct udphdr *)(pkt_itr + sizeof(struct ethhdr) +
-                                sizeof(struct iphdr));
-    if (ntohs(udp_hdr->dest) != 80) {
-      printk("Packet #%d: port number = %d\n", idx, ntohs(udp_hdr->dest));
-    }
-    pkt_itr = pkt_itr + 64;
-  }
+  clac();
 
   tx_pipe_buffer->tx_pipe_batch_buffers[tx_pipe_buffer->cur_idx].valid = false;
   send_batch(notif_buf_pair,
              tx_pipe_buffer->tx_pipe_batch_buffers[tx_pipe_buffer->cur_idx]
                  .buf_phys_addr,
-             stpp.len);
+             131072);
   tx_pipe_buffer->cur_idx =
       (tx_pipe_buffer->cur_idx + 1) % NB_BATCHES_PER_HUGEPAGE;
   return 0;

@@ -45,8 +45,10 @@ namespace enso_api {
 #include <sys/ioctl.h>
 
 struct enso_send_tx_pipe_params {
-  uint64_t phys_addr;
-  uint32_t len;
+  uint64_t control_virt_addr;
+  uint32_t control_len;
+  uint64_t data_virt_addr;
+  uint32_t data_len;
   uint32_t id;
 } __attribute__((packed));
 

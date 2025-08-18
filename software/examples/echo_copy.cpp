@@ -118,7 +118,7 @@ void run_echo_copy(uint32_t nb_queues, uint32_t core_id, uint32_t nb_cycles,
 
       rx_pipe->Clear();
 
-      tx_pipe->SendAndFree(batch_length);
+      // tx_pipe->SendAndFree(batch_length);
     }
   }
 }

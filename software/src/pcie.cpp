@@ -174,16 +174,21 @@ void prefetch_pipe(struct RxEnsoPipeInternal* enso_pipe,
   enso_dev->PrefetchPipe(enso_pipe->id);
 }
 
-static _enso_always_inline uint32_t
-__send_to_queue(struct NotificationBufPair* notification_buf_pair,
-                uint64_t phys_addr, uint32_t len, uint32_t tx_pipe_id) {
+static _enso_always_inline uint32_t __send_to_queue(
+    struct NotificationBufPair* notification_buf_pair,
+    uint64_t control_virt_addr, uint32_t control_len, uint64_t data_virt_addr,
+    uint32_t data_len, uint32_t tx_pipe_id) {
   EnsoBackend* enso_dev = (EnsoBackend*)notification_buf_pair->fpga_dev;
-  return enso_dev->SendTxPipe(phys_addr, len, tx_pipe_id);
+  return enso_dev->SendTxPipe(control_virt_addr, control_len, data_virt_addr,
+                              data_len, tx_pipe_id);
 }
 
 uint32_t send_to_queue(struct NotificationBufPair* notification_buf_pair,
-                       uint64_t phys_addr, uint32_t len, uint32_t tx_pipe_id) {
-  return __send_to_queue(notification_buf_pair, phys_addr, len, tx_pipe_id);
+                       uint64_t control_virt_addr, uint32_t control_len,
+                       uint64_t data_virt_addr, uint32_t data_len,
+                       uint32_t tx_pipe_id) {
+  return __send_to_queue(notification_buf_pair, control_virt_addr, control_len,
+                         data_virt_addr, data_len, tx_pipe_id);
 }
 
 uint32_t get_unreported_completions(

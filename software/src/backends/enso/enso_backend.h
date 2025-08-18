@@ -160,8 +160,11 @@ class EnsoBackend {
    *
    * @return Return 0 on success. On error, -1 is returned and errno is set.
    */
-  int SendTxPipe(uint64_t phys_addr, uint32_t len, uint32_t tx_pipe_id) {
-    return dev_->send_tx_pipe(phys_addr, len, tx_pipe_id);
+  int SendTxPipe(uint64_t control_virt_addr, uint32_t control_len,
+                 uint64_t data_virt_addr, uint32_t data_len,
+                 uint32_t tx_pipe_id) {
+    return dev_->send_tx_pipe(control_virt_addr, control_len, data_virt_addr,
+                              data_len, tx_pipe_id);
   }
 
   /**

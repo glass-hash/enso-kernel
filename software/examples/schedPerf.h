@@ -61,12 +61,13 @@ struct ServerConfig {
  * to it.
  */
 struct EnsoTxPipe {
-  explicit EnsoTxPipe(TxPipe* pipe, uint8_t* _buf)
+  explicit EnsoTxPipe(TxPipe* pipe, uint8_t* _controlBuf, uint8_t* _dataBuf)
       : txPipe(pipe),
         numAlignedBytes(0),
         numRawBytes(0),
         numPkts(0),
-        buf(_buf) {}
+        controlBuf(_controlBuf),
+        dataBuf(_dataBuf) {}
   // Enso TxPipe
   TxPipe* txPipe;
   // Number of cache aligned bytes in the pipe
@@ -75,10 +76,14 @@ struct EnsoTxPipe {
   uint32_t numRawBytes;
   // Number of packets in the pipe
   uint32_t numPkts;
-  // Size of the buffer
-  uint32_t bufSize;
-  // Buffer with the packet
-  uint8_t* buf;
+  // Size of the control buffer
+  uint32_t controlBufSize;
+  // Buffer with the control info
+  uint8_t* controlBuf;
+  // Size of the data buffer
+  uint32_t dataBufSize;
+  // Buffer with the data
+  uint8_t* dataBuf;
 };
 
 class ProgramConfig {

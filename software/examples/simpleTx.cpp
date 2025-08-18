@@ -181,7 +181,7 @@ void send_tx(TxPipe *pipe, uint8_t *main_buf, uint64_t total_bytes_in_main_buf,
     // copy the packets from the main buffer in the pipe
     memcpy(pipe_buf, main_buf, total_bytes_in_main_buf);
     // send the packets
-    pipe->SendAndFree(total_bytes_in_main_buf);
+    // pipe->SendAndFree(total_bytes_in_main_buf);
     // update the stats
     stats->bytes += total_good_bytes_in_main_buf;
     stats->pkts += total_pkts_in_main_buf;

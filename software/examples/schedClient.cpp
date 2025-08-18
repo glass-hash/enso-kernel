@@ -64,15 +64,22 @@ void Client::initializeTxPipes(std::vector<struct EnsoTxPipe>& txPipes,
   // be used with the same number of flows but different core IDs.
   uint16_t coreFlowIndexStart = coreID * numFlows;
   for (uint16_t flowInd = 0; flowInd < numFlows; flowInd++) {
-    uint8_t* pktBuf;
-    if (posix_memalign((void**)&pktBuf, 64, pktSize * sizeof(uint8_t)) != 0) {
+    uint8_t* controlBuf;
+    if (posix_memalign((void**)&controlBuf, 64, 42 * sizeof(uint8_t)) != 0) {
       std::cerr << "Posix memalign failed" << std::endl;
       exit(2);
     }
+
+    uint8_t* dataBuf;
+    if (posix_memalign((void**)&dataBuf, 64, 36864 * sizeof(uint8_t)) != 0) {
+      std::cerr << "Posix memalign failed" << std::endl;
+      exit(2);
+    }
+
     struct ether_addr dstMac = *ether_aton(kDstMac);
     struct ether_addr srcMac = *ether_aton(kSrcMac);
     uint16_t pktSizeNoCrc = pktSize - 4;
-    struct ether_header* ethHeader = (struct ether_header*)pktBuf;
+    struct ether_header* ethHeader = (struct ether_header*)controlBuf;
     struct iphdr* ipHeader = (struct iphdr*)(ethHeader + 1);
     struct udphdr* udpHeader = (struct udphdr*)(ipHeader + 1);
     uint32_t baseIP = 0xC0A80000;  // 192.168.0.0
@@ -99,11 +106,10 @@ void Client::initializeTxPipes(std::vector<struct EnsoTxPipe>& txPipes,
     udpHeader->len = htons(
         pktSizeNoCrc - (sizeof(struct ether_header) + sizeof(struct iphdr)));
     udpHeader->check = 0;
+
     // Fill payload
-    uint8_t* payload = (uint8_t*)(((char*)udpHeader) + sizeof(struct udphdr));
-    uint16_t payloadSize = pktSizeNoCrc - sizeof(struct ether_header) -
-                           sizeof(struct iphdr) - sizeof(struct udphdr);
-    for (uint16_t i = 0; i < payloadSize; i++) {
+    uint8_t* payload = dataBuf;
+    for (uint32_t i = 0; i < 36864; i++) {
       payload[i] = 0xff;
     }
     uint32_t numFlits = (pktSizeNoCrc - 1) / MIN_PACKET_SIZE + 1;
@@ -115,8 +121,10 @@ void Client::initializeTxPipes(std::vector<struct EnsoTxPipe>& txPipes,
       std::cerr << "Problem creating TX pipe" << std::endl;
       cleanupAndExit(txPipes, dev);
     }
-    struct EnsoTxPipe etp(pipe, pktBuf);
-    etp.bufSize = pktAlignedSize;
+    // TODO(kshitij): hardcoding this for now, change it once things work
+    struct EnsoTxPipe etp(pipe, controlBuf, dataBuf);
+    etp.controlBufSize = 42;
+    etp.dataBufSize = 36864;
     etp.numAlignedBytes = pktAlignedSize * numPktsInBatch;
     etp.numRawBytes = pktSizeNoCrc * numPktsInBatch;
     etp.numPkts = numPktsInBatch;
@@ -127,54 +135,33 @@ void Client::initializeTxPipes(std::vector<struct EnsoTxPipe>& txPipes,
 void Client::cleanupAndExit(std::vector<struct EnsoTxPipe>& txPipes,
                             std::unique_ptr<Device>& dev) {
   for (auto pipe : txPipes) {
-    if (pipe.buf) {
-      free(pipe.buf);
+    if (pipe.controlBuf) {
+      free(pipe.controlBuf);
+    }
+    if (pipe.dataBuf) {
+      free(pipe.dataBuf);
     }
   }
   dev.reset();
   exit(2);
 }
 
-static inline uint64_t get_ns(void) {
-  struct timespec ts;
-  // Get current time using CLOCK_MONOTONIC
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  // Convert to nanoseconds
-  uint64_t ns = (uint64_t)ts.tv_sec * NSEC_PER_SEC + (uint64_t)ts.tv_nsec;
-  return ns;
-}
-
 void Client::runTx(std::vector<enso::tx_stats_t>& stats,
                    std::vector<struct EnsoTxPipe>& pipes, uint16_t coreId,
                    uint16_t flowsPerCore, uint16_t rate) {
+  (void)rate;
   std::cout << "Running on core " << coreId << " with pid = " << getpid()
             << std::endl;
   uint16_t startInd = 0;
   uint16_t endInd = flowsPerCore;
-  uint64_t rate_bytes = ((uint64_t)rate * 1000000000) / 8;
-  int64_t cur_rate_bytes = rate_bytes;
-  uint64_t time_last = get_ns();
-  // Assuming that all pipes send the same batch size
-  uint64_t batch_size_on_wire = pipes[0].numRawBytes + pipes[0].numPkts * 24;
   while (ProgramConfig::keepRunning) {
     for (uint16_t i = startInd; i < endInd; i++) {
-      uint64_t time_now = get_ns();
-      if (time_now > (time_last + NSEC_PER_SEC)) {
-        cur_rate_bytes = rate_bytes;
-        time_last = time_now;
-      }
-      cur_rate_bytes -= batch_size_on_wire;
-      if (cur_rate_bytes > 0) {
-        // send the packets
-        uint8_t* pipeBuf =
-            pipes[i].txPipe->AllocateBuf(pipes[i].numAlignedBytes);
-        enso::memcpy_wrap_around(pipeBuf, pipes[i].buf,
-                                 pipes[i].numAlignedBytes, pipes[i].bufSize);
-        pipes[i].txPipe->SendAndFree(pipes[i].numAlignedBytes);
-        // update the stats
-        stats[i].nb_bytes += pipes[i].numRawBytes;
-        stats[i].nb_pkts += pipes[i].numPkts;
-      }
+      pipes[i].txPipe->SendAndFree(
+          (uint64_t)pipes[i].controlBuf, pipes[i].controlBufSize,
+          (uint64_t)pipes[i].dataBuf, pipes[i].dataBufSize);
+      // update the stats
+      stats[i].nb_bytes += pipes[i].numRawBytes;
+      stats[i].nb_pkts += pipes[i].numPkts;
     }
   }
 }
@@ -230,7 +217,8 @@ int Client::startClient(const ClientConfig& config) {
 
   // free all buffers
   for (auto pipe : txPipes) {
-    free(pipe.buf);
+    free(pipe.controlBuf);
+    free(pipe.dataBuf);
   }
   return 0;
 }
