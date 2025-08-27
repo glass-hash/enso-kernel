@@ -338,8 +338,7 @@ class Device {
    * @param phys_addr The physical address of the buffer region to send.
    * @param nb_bytes The number of bytes to send.
    */
-  void Send(uint32_t tx_enso_pipe_id, uint64_t control_virt_addr,
-            uint32_t control_nb_bytes, uint64_t data_virt_addr,
+  void Send(uint32_t tx_enso_pipe_id, uint64_t data_virt_addr,
             uint32_t data_nb_bytes);
 
   /**
@@ -810,9 +809,8 @@ class TxPipe {
     return buf_ + app_begin_;
   }
 
-  inline void SendAndFree(uint64_t controlBuf, uint32_t controlLen,
-                          uint64_t dataBuf, uint32_t dataLen) {
-    device_->Send(kId, controlBuf, controlLen, dataBuf, dataLen);
+  inline void SendAndFree(uint64_t dataBuf, uint32_t dataLen) {
+    device_->Send(kId, dataBuf, dataLen);
   }
 
   /**

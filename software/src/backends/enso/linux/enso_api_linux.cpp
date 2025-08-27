@@ -148,13 +148,10 @@ int EnsoDev::alloc_notif_buffer(int id) {
   return result;
 }
 
-int EnsoDev::send_tx_pipe(uint64_t control_virt_addr, uint32_t control_len,
-                          uint64_t data_virt_addr, uint32_t data_len,
+int EnsoDev::send_tx_pipe(uint64_t data_virt_addr, uint32_t data_len,
                           uint32_t tx_pipe_id) {
   int result;
   struct enso_send_tx_pipe_params stpp;
-  stpp.control_virt_addr = control_virt_addr;
-  stpp.control_len = control_len;
   stpp.data_virt_addr = data_virt_addr;
   stpp.data_len = data_len;
   stpp.id = tx_pipe_id;

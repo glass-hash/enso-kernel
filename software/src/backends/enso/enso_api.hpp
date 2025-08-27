@@ -71,8 +71,7 @@ class EnsoDev {
   int alloc_rx_pipe_id(bool fallback = false);
   int free_rx_pipe_id(int id);
   int alloc_notif_buffer(int id);
-  int send_tx_pipe(uint64_t control_virt_addr, uint32_t control_len,
-                   uint64_t data_virt_addr, uint32_t data_len,
+  int send_tx_pipe(uint64_t data_virt_addr, uint32_t data_len,
                    uint32_t tx_pipe_id);
   int get_unreported_completions();
   int send_config(struct TxNotification *txNotification);

@@ -104,7 +104,6 @@ void prefetch_pipe(struct RxEnsoPipeInternal* enso_pipe,
  * @return number of bytes sent.
  */
 uint32_t send_to_queue(struct NotificationBufPair* notification_buf_pair,
-                       uint64_t control_virt_addr, uint32_t control_len,
                        uint64_t data_virt_addr, uint32_t data_len,
                        uint32_t tx_pipe_id);
 

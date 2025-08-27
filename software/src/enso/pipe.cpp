@@ -341,11 +341,10 @@ int Device::ApplyConfig(struct TxNotification* config_notification) {
   return send_config(&notification_buf_pair_, config_notification);
 }
 
-void Device::Send(uint32_t tx_enso_pipe_id, uint64_t control_virt_addr,
-                  uint32_t control_nb_bytes, uint64_t data_virt_addr,
+void Device::Send(uint32_t tx_enso_pipe_id, uint64_t data_virt_addr,
                   uint32_t data_nb_bytes) {
-  send_to_queue(&notification_buf_pair_, control_virt_addr, control_nb_bytes,
-                data_virt_addr, data_nb_bytes, tx_enso_pipe_id);
+  send_to_queue(&notification_buf_pair_, data_virt_addr, data_nb_bytes,
+                tx_enso_pipe_id);
 }
 
 void Device::ProcessCompletions() {

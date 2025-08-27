@@ -156,9 +156,8 @@ void Client::runTx(std::vector<enso::tx_stats_t>& stats,
   uint16_t endInd = flowsPerCore;
   while (ProgramConfig::keepRunning) {
     for (uint16_t i = startInd; i < endInd; i++) {
-      pipes[i].txPipe->SendAndFree(
-          (uint64_t)pipes[i].controlBuf, pipes[i].controlBufSize,
-          (uint64_t)pipes[i].dataBuf, pipes[i].dataBufSize);
+      pipes[i].txPipe->SendAndFree((uint64_t)pipes[i].dataBuf,
+                                   pipes[i].dataBufSize);
       // update the stats
       stats[i].nb_bytes += pipes[i].numRawBytes;
       stats[i].nb_pkts += pipes[i].numPkts;
