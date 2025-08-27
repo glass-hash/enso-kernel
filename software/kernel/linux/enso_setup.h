@@ -79,6 +79,7 @@ struct enso_intel_pcie {
 };
 
 struct enso_send_tx_pipe_params {
+  // remove the control len
   uint64_t control_virt_addr;
   uint32_t control_len;
   uint64_t data_virt_addr;

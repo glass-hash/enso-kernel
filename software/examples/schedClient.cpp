@@ -162,6 +162,10 @@ void Client::runTx(std::vector<enso::tx_stats_t>& stats,
       // update the stats
       stats[i].nb_bytes += pipes[i].numRawBytes;
       stats[i].nb_pkts += pipes[i].numPkts;
+      // if (stats[i].nb_pkts >= 64) {
+      //     ProgramConfig::keepRunning = false;
+      //     return;
+      // }
     }
   }
 }

@@ -747,12 +747,11 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   struct notification_buf_pair *notif_buf_pair = chr_dev_bk->notif_buf_pair;
   struct dev_bookkeep *dev_bk;
   struct tx_pipe_buffer *tx_pipe_buffer;
-  uint8_t *user_control_addr;
   uint8_t *user_data_addr;
   uint8_t *batch_buf;
   uint32_t count = 0;
   uint32_t data_off = 0;
-  uint32_t copy_off = 0;
+  uint32_t copy_off = 42;
   uint32_t per_packet_data_size = 18;
   uint32_t copied_len = 0;
 
@@ -793,27 +792,19 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     notif_buf_pair->nb_unreported_completions = 0;
   }
 
-  // printk("Control at %llx, len = %u, data at %llx, len = %u\n",
-  // stpp.control_virt_addr,
-  //                                                               stpp.control_len,
-  //                                                               stpp.data_virt_addr,
-  //                                                               stpp.data_len);
   batch_buf =
       (uint8_t *)tx_pipe_buffer->tx_pipe_batch_buffers[tx_pipe_buffer->cur_idx]
           .buf_virt_addr;
-  user_control_addr = (uint8_t *)stpp.control_virt_addr;
   user_data_addr = (uint8_t *)stpp.data_virt_addr;
 
   stac();
   while (copied_len < stpp.data_len) {
-    memcpy(batch_buf + copy_off, user_control_addr, stpp.control_len);
-    copy_off += stpp.control_len;
     memcpy(batch_buf + copy_off, user_data_addr + data_off,
            per_packet_data_size);
-    copy_off += per_packet_data_size;
-    data_off += per_packet_data_size;
     // we need to do 64 byte aligned copy
-    copy_off += 4;
+    copy_off += 64;
+    // printk("copy off = %u\n", copy_off);
+    data_off += per_packet_data_size;
     copied_len += per_packet_data_size;
   }
   clac();
@@ -1274,6 +1265,13 @@ static long alloc_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
   int32_t pipe_id = -1;
   uint32_t off = 0;
   struct dev_bookkeep *dev_bk;
+  uint8_t *pkt_itr;
+  struct udphdr *udp_hdr;
+  struct ethhdr *eth_hdr;
+  struct iphdr *ip_hdr;
+  uint16_t pkt_num = 0;
+  unsigned char src_mac[6];
+  unsigned char dst_mac[6];
 
   dev_bk = chr_dev_bk->dev_bk;
   for (i = 0; i < MAX_NB_FLOWS / 8; ++i) {
@@ -1317,6 +1315,11 @@ static long alloc_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
     return -ENOMEM;
   }
 
+  sscanf("aa:aa:aa:aa:aa:aa", "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &src_mac[0],
+         &src_mac[1], &src_mac[2], &src_mac[3], &src_mac[4], &src_mac[5]);
+  sscanf("bb:bb:bb:bb:bb:bb", "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &dst_mac[0],
+         &dst_mac[1], &dst_mac[2], &dst_mac[3], &dst_mac[4], &dst_mac[5]);
+
   for (i = 0; i < NB_BATCHES_PER_HUGEPAGE; i++) {
     // Chop up the hugepage buffer into MAX_TRANSFER_LEN sized buffers
     off = i * MAX_TRANSFER_LEN;
@@ -1332,6 +1335,45 @@ static long alloc_tx_pipe_id(struct chr_dev_bookkeep *chr_dev_bk,
            dev_bk->tx_pipe_buffers[pipe_id]
                ->tx_pipe_batch_buffers[i]
                .buf_phys_addr);
+
+    // initialize the buffer with control information (Ethernet, IP, UDP
+    // headers)
+    pkt_itr = (uint8_t *)dev_bk->tx_pipe_buffers[pipe_id]
+                  ->tx_pipe_batch_buffers[i]
+                  .buf_virt_addr;
+    pkt_num = 0;
+    // assume min sized packets for now
+    while (pkt_num < 2048) {
+      eth_hdr = (struct ethhdr *)pkt_itr;
+      ip_hdr = (struct iphdr *)(eth_hdr + 1);
+      udp_hdr = (struct udphdr *)(ip_hdr + 1);
+
+      memcpy(&eth_hdr->h_source, src_mac, ETH_ALEN);
+      memcpy(&eth_hdr->h_dest, dst_mac, ETH_ALEN);
+      eth_hdr->h_proto = htons(ETH_P_IP);
+
+      ip_hdr->version = 4;
+      ip_hdr->ihl = 5;
+      ip_hdr->tos = 0;
+      ip_hdr->tot_len = htons(60 - sizeof(struct ethhdr));
+      ip_hdr->id = 0;
+      ip_hdr->frag_off = 0;
+      ip_hdr->ttl = 64;
+      ip_hdr->protocol = IPPROTO_UDP;
+      ip_hdr->saddr = htonl(0xC0A80000);
+      // TODO(kshitij): Change the destination address based on the flow index
+      ip_hdr->daddr = htonl(0xC0A80000);
+      // TODO(kshitij): Do we need to calculate the IP and UDP checksums?
+      ip_hdr->check = 0;
+
+      udp_hdr->source = htons(8080);
+      udp_hdr->dest = htons(80);
+      udp_hdr->len = htons(60 - (sizeof(struct ethhdr) + sizeof(struct iphdr)));
+      udp_hdr->check = 0;
+
+      pkt_num++;
+      pkt_itr = pkt_itr + 64;
+    }
   }
 
   dev_bk->tx_pipe_buffers[pipe_id]->cur_idx = 0;
