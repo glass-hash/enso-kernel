@@ -753,7 +753,7 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   uint32_t data_off = 0;
   uint32_t copy_off = 42;
   uint32_t per_packet_data_size = 18;
-  uint32_t copied_len = 0;
+  int i, j, remaining;
 
   if (copy_from_user(&stpp, (void __user *)uarg, sizeof(stpp))) {
     printk("couldn't copy arg from user.");
@@ -798,14 +798,31 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   user_data_addr = (uint8_t *)stpp.data_virt_addr;
 
   stac();
-  while (copied_len < stpp.data_len) {
-    memcpy(batch_buf + copy_off, user_data_addr + data_off,
-           per_packet_data_size);
-    // we need to do 64 byte aligned copy
+  while (data_off < stpp.data_len) {
+    // Copy and convert 64-bit chunks
+    uint64_t *src = (uint64_t *)(user_data_addr + data_off);
+    uint64_t *dst = (uint64_t *)(batch_buf + copy_off);
+
+    for (i = 0; i < per_packet_data_size / 8; i++) {
+      dst[i] = cpu_to_be64(src[i]);
+    }
+
+    // Handle remaining bytes if per_packet_data_size is not divisible by 8
+    remaining = per_packet_data_size % 8;
+    if (remaining > 0) {
+      uint8_t *src_bytes =
+          (uint8_t *)(user_data_addr + data_off + (per_packet_data_size & ~7));
+      uint8_t *dst_bytes =
+          (uint8_t *)(batch_buf + copy_off + (per_packet_data_size & ~7));
+      for (j = 0; j < remaining; j++) {
+        dst_bytes[j] = src_bytes[j];
+      }
+    }
+
+    // We are assuming min sized packets now. It might be very different once we
+    // start asking how we should chunk up the buffers
     copy_off += 64;
-    // printk("copy off = %u\n", copy_off);
     data_off += per_packet_data_size;
-    copied_len += per_packet_data_size;
   }
   clac();
 

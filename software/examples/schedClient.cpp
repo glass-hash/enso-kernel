@@ -32,10 +32,6 @@
 
 #include <arpa/inet.h>
 #include <enso/helpers.h>
-#include <net/ethernet.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <netinet/udp.h>
 #include <unistd.h>
 
 #include <chrono>
@@ -62,50 +58,15 @@ void Client::initializeTxPipes(std::vector<struct EnsoTxPipe>& txPipes,
                                uint16_t coreID) {
   // We want to have one flow per tx pipe. During testing, the program will
   // be used with the same number of flows but different core IDs.
-  uint16_t coreFlowIndexStart = coreID * numFlows;
+  // uint16_t coreFlowIndexStart = coreID * numFlows;
+  uint16_t pktSizeNoCrc = pktSize - 4;
+  (void)coreID;
   for (uint16_t flowInd = 0; flowInd < numFlows; flowInd++) {
-    uint8_t* controlBuf;
-    if (posix_memalign((void**)&controlBuf, 64, 42 * sizeof(uint8_t)) != 0) {
-      std::cerr << "Posix memalign failed" << std::endl;
-      exit(2);
-    }
-
     uint8_t* dataBuf;
     if (posix_memalign((void**)&dataBuf, 64, 36864 * sizeof(uint8_t)) != 0) {
       std::cerr << "Posix memalign failed" << std::endl;
       exit(2);
     }
-
-    struct ether_addr dstMac = *ether_aton(kDstMac);
-    struct ether_addr srcMac = *ether_aton(kSrcMac);
-    uint16_t pktSizeNoCrc = pktSize - 4;
-    struct ether_header* ethHeader = (struct ether_header*)controlBuf;
-    struct iphdr* ipHeader = (struct iphdr*)(ethHeader + 1);
-    struct udphdr* udpHeader = (struct udphdr*)(ipHeader + 1);
-    uint32_t baseIP = 0xC0A80000;  // 192.168.0.0
-    // Ethernet header
-    memcpy(&ethHeader->ether_shost, &srcMac, ETHER_ADDR_LEN);
-    memcpy(&ethHeader->ether_dhost, &dstMac, ETHER_ADDR_LEN);
-    ethHeader->ether_type = htons(ETHERTYPE_IP);
-    // IP header
-    ipHeader->version = 4;
-    ipHeader->ihl = 5;  // 20 bytes (5 * 4)
-    ipHeader->tos = 0;
-    ipHeader->tot_len = htons(pktSizeNoCrc - sizeof(struct ether_header));
-    ipHeader->id = 0;
-    ipHeader->frag_off = 0;
-    ipHeader->ttl = 64;
-    ipHeader->protocol = IPPROTO_UDP;
-    ipHeader->saddr = htonl(baseIP);  // srcIP always remains the same;
-    // why create new flows based on dst ip though, why not dst port?
-    ipHeader->daddr = htonl(baseIP + coreFlowIndexStart + flowInd);
-    ipHeader->check = 0;
-    // UDP header
-    udpHeader->source = htons(8080);
-    udpHeader->dest = htons(80);
-    udpHeader->len = htons(
-        pktSizeNoCrc - (sizeof(struct ether_header) + sizeof(struct iphdr)));
-    udpHeader->check = 0;
 
     // Fill payload
     uint8_t* payload = dataBuf;
@@ -116,14 +77,14 @@ void Client::initializeTxPipes(std::vector<struct EnsoTxPipe>& txPipes,
     uint32_t pktAlignedSize = numFlits * MIN_PACKET_SIZE;
     uint32_t numPktsInBatch = batchSize / pktAlignedSize;
 
+    // TODO(kshitij): Allocate the TxPipe with a flowID so that the kernel
+    // can initialize the packets correctly
     TxPipe* pipe = dev->AllocateTxPipe();
     if (!pipe) {
       std::cerr << "Problem creating TX pipe" << std::endl;
       cleanupAndExit(txPipes, dev);
     }
-    // TODO(kshitij): hardcoding this for now, change it once things work
-    struct EnsoTxPipe etp(pipe, controlBuf, dataBuf);
-    etp.controlBufSize = 42;
+    struct EnsoTxPipe etp(pipe, dataBuf);
     etp.dataBufSize = 36864;
     etp.numAlignedBytes = pktAlignedSize * numPktsInBatch;
     etp.numRawBytes = pktSizeNoCrc * numPktsInBatch;
@@ -135,9 +96,6 @@ void Client::initializeTxPipes(std::vector<struct EnsoTxPipe>& txPipes,
 void Client::cleanupAndExit(std::vector<struct EnsoTxPipe>& txPipes,
                             std::unique_ptr<Device>& dev) {
   for (auto pipe : txPipes) {
-    if (pipe.controlBuf) {
-      free(pipe.controlBuf);
-    }
     if (pipe.dataBuf) {
       free(pipe.dataBuf);
     }
@@ -156,15 +114,16 @@ void Client::runTx(std::vector<enso::tx_stats_t>& stats,
   uint16_t endInd = flowsPerCore;
   while (ProgramConfig::keepRunning) {
     for (uint16_t i = startInd; i < endInd; i++) {
+      // initialize the buffer with some values
+      for (uint32_t ind = 0; ind < 36864; ind += 8) {
+        *((uint64_t*)(pipes[i].dataBuf + ind)) = 0xffffffffffffffff;
+      }
+
       pipes[i].txPipe->SendAndFree((uint64_t)pipes[i].dataBuf,
                                    pipes[i].dataBufSize);
       // update the stats
       stats[i].nb_bytes += pipes[i].numRawBytes;
       stats[i].nb_pkts += pipes[i].numPkts;
-      // if (stats[i].nb_pkts >= 64) {
-      //     ProgramConfig::keepRunning = false;
-      //     return;
-      // }
     }
   }
 }
@@ -220,7 +179,6 @@ int Client::startClient(const ClientConfig& config) {
 
   // free all buffers
   for (auto pipe : txPipes) {
-    free(pipe.controlBuf);
     free(pipe.dataBuf);
   }
   return 0;
