@@ -753,7 +753,7 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
   uint32_t data_off = 0;
   uint32_t copy_off = 42;
   uint32_t per_packet_data_size = 18;
-  int i, j, remaining;
+  // int i, j, remaining;
 
   if (copy_from_user(&stpp, (void __user *)uarg, sizeof(stpp))) {
     printk("couldn't copy arg from user.");
@@ -797,23 +797,27 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
           .buf_virt_addr;
   user_data_addr = (uint8_t *)stpp.data_virt_addr;
 
-  stac();
-  while (data_off < stpp.data_len) {
+  // stac();
+
+  /*while (data_off < stpp.data_len) {
     // Copy and convert 64-bit chunks
     uint64_t *src = (uint64_t *)(user_data_addr + data_off);
     uint64_t *dst = (uint64_t *)(batch_buf + copy_off);
 
     for (i = 0; i < per_packet_data_size / 8; i++) {
-      dst[i] = cpu_to_be64(src[i]);
+      dst[i] = src[i];
     }
 
     // Handle remaining bytes if per_packet_data_size is not divisible by 8
     remaining = per_packet_data_size % 8;
     if (remaining > 0) {
+      // To get to the right location of the source and desitnation pointers
+      // we need add i * 8 to the pointer location
       uint8_t *src_bytes =
           (uint8_t *)(user_data_addr + data_off + (per_packet_data_size & ~7));
       uint8_t *dst_bytes =
           (uint8_t *)(batch_buf + copy_off + (per_packet_data_size & ~7));
+
       for (j = 0; j < remaining; j++) {
         dst_bytes[j] = src_bytes[j];
       }
@@ -823,8 +827,24 @@ static long send_tx_pipe(struct chr_dev_bookkeep *chr_dev_bk,
     // start asking how we should chunk up the buffers
     copy_off += 64;
     data_off += per_packet_data_size;
+  }*/
+
+  /*while (data_off < stpp.data_len) {
+      memcpy(batch_buf + copy_off, user_data_addr + data_off,
+  per_packet_data_size); data_off += per_packet_data_size; copy_off += 64;
+  }*/
+
+  // clac();
+
+  while (data_off < stpp.data_len) {
+    if (copy_from_user(batch_buf + copy_off, user_data_addr + data_off,
+                       per_packet_data_size)) {
+      printk("Failed to copy\n");
+      return -EFAULT;
+    }
+    data_off += per_packet_data_size;
+    copy_off += 64;
   }
-  clac();
 
   tx_pipe_buffer->tx_pipe_batch_buffers[tx_pipe_buffer->cur_idx].valid = false;
   send_batch(notif_buf_pair,
